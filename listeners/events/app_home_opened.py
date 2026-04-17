@@ -22,7 +22,7 @@ def app_home_opened_callback(event: dict, logger: Logger, client: WebClient):
                 "text": f"{model_info['name']} ({model_info['provider']})",
                 "emoji": True,
             },
-            "value": f"{model_name} {model_info['provider'].lower()}",
+            "value": f"{model_name}|{model_info['provider'].lower()}",
         }
         for model_name, model_info in get_available_providers().items()
     ]

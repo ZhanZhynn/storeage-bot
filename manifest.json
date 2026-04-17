@@ -35,6 +35,7 @@
                 "commands",
                 "groups:history",
                 "groups:read",
+                "files:read",
                 "im:history",
                 "im:read",
                 "im:write",

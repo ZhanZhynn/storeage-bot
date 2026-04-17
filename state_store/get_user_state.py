@@ -17,7 +17,31 @@ def get_user_state(user_id: str, is_app_home: bool):
         if os.path.exists(filepath):
             with open(filepath, "r") as file:
                 user_identity: UserIdentity = json.load(file)
-                return user_identity["provider"], user_identity["model"]
+                provider = user_identity.get("provider")
+                model = user_identity.get("model")
+
+                # Backward compatibility: older parsers could store
+                # "model|provider" into both fields.
+                if isinstance(provider, str) and "|" in provider:
+                    model, provider = provider.split("|", 1)
+                elif isinstance(model, str) and "|" in model:
+                    model, provider = model.split("|", 1)
+
+                if user_identity.get("provider") != provider or user_identity.get(
+                    "model"
+                ) != model:
+                    with open(filepath, "w") as outfile:
+                        outfile.write(
+                            json.dumps(
+                                {
+                                    "user_id": user_identity.get("user_id", user_id),
+                                    "provider": provider,
+                                    "model": model,
+                                }
+                            )
+                        )
+
+                return provider, model
     except Exception as e:
         logger.error(e)
         raise e

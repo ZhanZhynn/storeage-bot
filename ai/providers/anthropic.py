@@ -45,7 +45,13 @@ class AnthropicAPI(BaseAPIProvider):
         else:
             return {}
 
-    def generate_response(self, prompt: str, system_content: str) -> str:
+    def generate_response(
+        self,
+        prompt: str,
+        system_content: str,
+        conversation_id: str | None = None,
+        file_paths: list[str] | None = None,
+    ) -> str:
         try:
             self.client = anthropic.Anthropic(api_key=self.api_key)
             response = self.client.messages.create(

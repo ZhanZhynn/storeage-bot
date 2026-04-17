@@ -77,6 +77,72 @@ Unlock the OpenAI models from your OpenAI account dashboard by clicking [create 
 export OPENAI_API_KEY=<your-api-key>
 ```
 
+##### OpenCode Session Setup (Local-Only)
+
+To use your local OpenCode session instead of a provider API key, start OpenCode's local server and web interface:
+
+```zsh
+opencode web --hostname 127.0.0.1 --port 4096
+```
+
+Then export the local OpenCode URL for this Slack bot process:
+
+```zsh
+export OPENCODE_URL=http://127.0.0.1:4096
+```
+
+The app can auto-start OpenCode web server when `app.py` launches:
+
+```zsh
+export AUTO_START_OPENCODE=true
+export OPENCODE_HOSTNAME=127.0.0.1
+export OPENCODE_PORT=4096
+```
+
+If you prefer to manage OpenCode separately, disable auto-start:
+
+```zsh
+export AUTO_START_OPENCODE=false
+```
+
+Choose which OpenCode model(s) should appear in Slack:
+
+```zsh
+# Single model
+export OPENCODE_MODEL=github-copilot/gpt-5.3-codex
+
+# Or multiple models in the dropdown
+export OPENCODE_MODELS=github-copilot/gpt-5.3-codex,github-copilot/claude-sonnet-4.5,openai/o4-mini
+```
+
+If neither `OPENCODE_MODEL` nor `OPENCODE_MODELS` is set, the app will load models from `opencode models` automatically.
+
+OpenCode conversations are persisted per Slack thread/DM in a local mapping file:
+
+```zsh
+export OPENCODE_SESSION_STORE=./data/opencode_sessions.json
+```
+
+This keeps each Slack thread in a single OpenCode session and sends only the latest user message each turn (instead of re-sending entire thread history).
+
+File uploads are supported for OpenCode requests. Supported file types are images (`.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`) and spreadsheet formats (`.xlsx`, `.xls`, `.csv`).
+
+Attach files to your Slack message/mention and the bot will download them temporarily and forward them to OpenCode with `--file`.
+
+For images, the app validates the downloaded bytes and normalizes the temporary file extension to one of the accepted formats (`.png`, `.jpeg`, `.gif`, `.webp`) before sending to OpenCode.
+
+The default system prompt is only prepended on the first OpenCode message in a Slack thread. Follow-up messages in the same thread use the same OpenCode session and send only the latest user message.
+
+Make sure your Slack app has the `files:read` bot scope and is reinstalled after manifest updates, otherwise file downloads will fail and the bot will post a warning in-thread.
+
+Optional (if your OpenCode server uses a password):
+
+```zsh
+export OPENCODE_SERVER_PASSWORD=<your-password>
+```
+
+Once the bot is running, open the Slack app home and choose `OpenCode Session (OpenCode)` from the provider dropdown.
+
 ### Setup Your Local Project
 ```zsh
 # Clone this project onto your machine

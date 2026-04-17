@@ -88,7 +88,13 @@ class VertexAPI(BaseAPIProvider):
         else:
             return {}
 
-    def generate_response(self, prompt: str, system_content: str) -> str:
+    def generate_response(
+        self,
+        prompt: str,
+        system_content: str,
+        conversation_id: str | None = None,
+        file_paths: list[str] | None = None,
+    ) -> str:
         system_instruction = None
         if self.MODELS[self.current_model]["system_instruction_supported"]:
             system_instruction = system_content

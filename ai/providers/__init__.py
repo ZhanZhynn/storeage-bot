@@ -4,6 +4,7 @@ from state_store.get_user_state import get_user_state
 
 from ..ai_constants import DEFAULT_SYSTEM_CONTENT
 from .anthropic import AnthropicAPI
+from .opencode import OpenCodeAPI
 from .openai import OpenAI_API
 from .vertexai import VertexAPI
 
@@ -26,6 +27,7 @@ isn't in the channel where the command is run.
 def get_available_providers():
     return {
         **AnthropicAPI().get_models(),
+        **OpenCodeAPI().get_models(),
         **OpenAI_API().get_models(),
         **VertexAPI().get_models(),
     }
@@ -36,6 +38,8 @@ def _get_provider(provider_name: str):
         return AnthropicAPI()
     elif provider_name.lower() == "openai":
         return OpenAI_API()
+    elif provider_name.lower() == "opencode":
+        return OpenCodeAPI()
     elif provider_name.lower() == "vertexai":
         return VertexAPI()
     else:
@@ -45,16 +49,57 @@ def _get_provider(provider_name: str):
 def get_provider_response(
     user_id: str,
     prompt: str,
-    context: Optional[List] = [],
+    context: Optional[List] = None,
     system_content=DEFAULT_SYSTEM_CONTENT,
+    conversation_id: Optional[str] = None,
+    file_paths: Optional[List[str]] = None,
 ):
-    formatted_context = "\n".join([f"{msg['user']}: {msg['text']}" for msg in context])
-    full_prompt = f"Prompt: {prompt}\nContext: {formatted_context}"
+    if context is None:
+        context = []
     try:
         provider_name, model_name = get_user_state(user_id, False)
         provider = _get_provider(provider_name)
         provider.set_model(model_name)
-        response = provider.generate_response(full_prompt, system_content)
+
+        if provider_name.lower() == "opencode":
+            full_prompt = prompt
+        else:
+            formatted_context = "\n".join(
+                [f"{msg['user']}: {msg['text']}" for msg in context]
+            )
+            full_prompt = f"Prompt: {prompt}\nContext: {formatted_context}"
+
+        response = provider.generate_response(
+            full_prompt,
+            system_content,
+            conversation_id=conversation_id,
+            file_paths=file_paths,
+        )
         return response
     except Exception as e:
         raise e
+
+
+def get_opencode_sent_file_ids(user_id: str, conversation_id: Optional[str]) -> set[str]:
+    provider_name, model_name = get_user_state(user_id, False)
+    if provider_name.lower() != "opencode":
+        return set()
+
+    provider = OpenCodeAPI()
+    provider.set_model(model_name)
+    return provider.get_sent_file_ids(conversation_id)
+
+
+def mark_opencode_sent_file_ids(
+    user_id: str, conversation_id: Optional[str], file_ids: List[str]
+):
+    if not file_ids:
+        return
+
+    provider_name, model_name = get_user_state(user_id, False)
+    if provider_name.lower() != "opencode":
+        return
+
+    provider = OpenCodeAPI()
+    provider.set_model(model_name)
+    provider.set_sent_file_ids(conversation_id, file_ids)
