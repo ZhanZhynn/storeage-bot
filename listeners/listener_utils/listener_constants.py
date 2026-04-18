@@ -12,3 +12,6 @@ Please create a quick summary of the conversation in this channel to help them c
 Don't use user IDs or names in your response.
 """
 DEFAULT_LOADING_TEXT = "Thinking..."
+SLACK_MAX_MESSAGE_CHARS = 40000
+SLACK_SAFE_MESSAGE_CHARS = 39000
+SLACK_SUMMARIZED_FOOTER = "\n\n_Auto-summarized for Slack length._"

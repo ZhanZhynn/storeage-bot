@@ -11,6 +11,9 @@ from ..listener_utils.listener_constants import (
     MENTION_WITHOUT_TEXT,
 )
 from ..listener_utils.parse_conversation import parse_conversation
+from ..listener_utils.sqlite_upload_flow import process_sqlite_upload_message
+from ..listener_utils.sqlite_upload_flow import build_sqlite_upload_reply
+from ..listener_utils.slack_message import clamp_slack_text, summarize_for_slack
 from ..listener_utils.slack_files import cleanup_files, download_supported_files
 
 """
@@ -53,6 +56,27 @@ def app_mentioned_callback(client: WebClient, event: dict, logger: Logger, say: 
             )
 
         if text:
+            upload_handled, upload_response = process_sqlite_upload_message(
+                user_id=user_id,
+                channel_id=channel_id,
+                thread_ts=thread_ts,
+                text=text,
+                file_paths=file_paths,
+            )
+            if upload_handled:
+                reply_payload = build_sqlite_upload_reply(
+                    user_id=user_id,
+                    channel_id=channel_id,
+                    thread_ts=thread_ts,
+                    response_text=upload_response or "Upload request handled.",
+                )
+                say(
+                    text=clamp_slack_text(reply_payload["text"]),
+                    blocks=reply_payload.get("blocks"),
+                    thread_ts=thread_ts,
+                )
+                return
+
             waiting_message = say(text=DEFAULT_LOADING_TEXT, thread_ts=thread_ts)
             response = get_provider_response(
                 user_id,
@@ -66,14 +90,16 @@ def app_mentioned_callback(client: WebClient, event: dict, logger: Logger, say: 
                 warning_text = "\n".join([f"- {w}" for w in file_warnings[:5]])
                 response = f"{response}\n\nFile warnings:\n{warning_text}"
             client.chat_update(
-                channel=channel_id, ts=waiting_message["ts"], text=response
+                channel=channel_id,
+                ts=waiting_message["ts"],
+                text=summarize_for_slack(user_id, response),
             )
         else:
             response = MENTION_WITHOUT_TEXT
             if file_warnings:
                 warning_text = "\n".join([f"- {w}" for w in file_warnings[:5]])
                 response = f"{response}\n\nFile warnings:\n{warning_text}"
-            say(text=response, thread_ts=thread_ts)
+            say(text=clamp_slack_text(response), thread_ts=thread_ts)
 
     except Exception as e:
         logger.error(e)
@@ -86,9 +112,12 @@ def app_mentioned_callback(client: WebClient, event: dict, logger: Logger, say: 
             client.chat_update(
                 channel=channel_id,
                 ts=waiting_message["ts"],
-                text=f"Received an error from Bolty:\n{e}{warning_text}",
+                text=clamp_slack_text(f"Received an error from Bolty:\n{e}{warning_text}"),
             )
         else:
-            say(text=f"Received an error from Bolty:\n{e}{warning_text}", thread_ts=thread_ts)
+            say(
+                text=clamp_slack_text(f"Received an error from Bolty:\n{e}{warning_text}"),
+                thread_ts=thread_ts,
+            )
     finally:
         cleanup_files(file_paths)

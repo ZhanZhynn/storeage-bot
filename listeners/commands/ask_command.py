@@ -2,6 +2,7 @@ from slack_bolt import Ack, Say, BoltContext
 from logging import Logger
 from ai.providers import get_provider_response
 from slack_sdk import WebClient
+from ..listener_utils.slack_message import clamp_slack_text, summarize_for_slack
 
 """
 Callback for handling the 'ask-bolty' command. It acknowledges the command, retrieves the user's ID and prompt,
@@ -41,7 +42,10 @@ def ask_callback(
                                 "elements": [
                                     {
                                         "type": "text",
-                                        "text": get_provider_response(user_id, prompt),
+                                        "text": summarize_for_slack(
+                                            user_id,
+                                            get_provider_response(user_id, prompt)
+                                        ),
                                     }
                                 ],
                             },
@@ -52,5 +56,7 @@ def ask_callback(
     except Exception as e:
         logger.error(e)
         client.chat_postEphemeral(
-            channel=channel_id, user=user_id, text=f"Received an error from Bolty:\n{e}"
+            channel=channel_id,
+            user=user_id,
+            text=clamp_slack_text(f"Received an error from Bolty:\n{e}"),
         )

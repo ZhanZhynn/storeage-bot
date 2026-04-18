@@ -5,6 +5,7 @@ This Slack chatbot app template offers a customizable solution for integrating A
 * Interact with the bot by mentioning it in conversations and threads
 * Send direct messages to the bot for private interactions
 * Use the `/ask-bolty` command to communicate with the bot in channels where it hasn't been added
+* Use the `/upload-sqlite` command to run guided spreadsheet-to-SQLite uploads
 * Utilize a custom function for integration with Workflow Builder to summarize messages in conversations
 * Select your preferred API/model from the app home to customize the bot's responses
 * Bring Your Own Language Model [BYO LLM](#byo-llm) for customization
@@ -134,6 +135,37 @@ For images, the app validates the downloaded bytes and normalizes the temporary 
 The default system prompt is only prepended on the first OpenCode message in a Slack thread. Follow-up messages in the same thread use the same OpenCode session and send only the latest user message.
 
 Make sure your Slack app has the `files:read` bot scope and is reinstalled after manifest updates, otherwise file downloads will fail and the bot will post a warning in-thread.
+
+SQLite upload flow is also supported for spreadsheet files in messages/mentions. By default, uploads use a repo-local database file:
+
+```zsh
+./data/bolty.db
+```
+
+You can override this path with:
+
+```zsh
+export BOLTY_SQLITE_DB_PATH=./data/bolty.db
+```
+
+The bot also injects this SQLite path and current table list into AI prompt context, so when users ask about table data without a path, it will prefer this configured DB first.
+
+Example prompts in Slack:
+
+- `upload this csv to sqlite table sales`
+- `upload to table sales sheet Summary`
+- `mode shared`
+- `create table sales_2026`
+- `confirm upload`
+- `cancel`
+
+You can also start a guided flow via slash command:
+
+```zsh
+/upload-sqlite table sales
+```
+
+After running the command, reply in the started thread with your spreadsheet attachment and any follow-up instructions.
 
 Optional (if your OpenCode server uses a password):
 

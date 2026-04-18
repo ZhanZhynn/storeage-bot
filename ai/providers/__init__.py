@@ -1,6 +1,9 @@
 from typing import List, Optional
+import re
 
 from state_store.get_user_state import get_user_state
+from ai.utils import build_spreadsheet_context
+from ai.utils import build_sqlite_context
 
 from ..ai_constants import DEFAULT_SYSTEM_CONTENT
 from .anthropic import AnthropicAPI
@@ -69,6 +72,25 @@ def get_provider_response(
             )
             full_prompt = f"Prompt: {prompt}\nContext: {formatted_context}"
 
+        spreadsheet_context = build_spreadsheet_context(file_paths)
+        sqlite_context = build_sqlite_context() if _should_include_sqlite_context(prompt) else ""
+        context_parts = []
+        if spreadsheet_context:
+            context_parts.append(spreadsheet_context)
+
+        if sqlite_context:
+            context_parts.append(sqlite_context)
+
+        if context_parts:
+            joined_context = "\n\n".join(context_parts)
+            full_prompt = f"{full_prompt}\n\n{joined_context}"
+
+        if spreadsheet_context:
+            full_prompt = (
+                f"{full_prompt}\n\nIf calculations are requested, use the spreadsheet analysis first "
+                "and clearly state assumptions for any missing values."
+            )
+
         response = provider.generate_response(
             full_prompt,
             system_content,
@@ -78,6 +100,32 @@ def get_provider_response(
         return response
     except Exception as e:
         raise e
+
+
+def _should_include_sqlite_context(prompt: str) -> bool:
+    lowered = (prompt or "").lower()
+    sqlite_keywords = (
+        "sqlite",
+        "database",
+        "db",
+        "table",
+        "schema",
+        "query",
+        "sql",
+        "select ",
+        "insert ",
+        "update ",
+        "delete ",
+        "upload",
+        "import",
+        "csv",
+        "xlsx",
+        "xls",
+    )
+    if any(keyword in lowered for keyword in sqlite_keywords):
+        return True
+
+    return bool(re.search(r"\bfrom\s+[a-zA-Z_][a-zA-Z0-9_]*\b", lowered))
 
 
 def get_opencode_sent_file_ids(user_id: str, conversation_id: Optional[str]) -> set[str]:
