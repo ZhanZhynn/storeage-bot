@@ -12,7 +12,11 @@ from ..listener_utils.parse_conversation import parse_conversation
 from ..listener_utils.sqlite_upload_flow import process_sqlite_upload_message
 from ..listener_utils.sqlite_upload_flow import build_sqlite_upload_reply
 from ..listener_utils.slack_message import clamp_slack_text, safe_chat_update
-from ..listener_utils.slack_files import cleanup_files, download_supported_files
+from ..listener_utils.slack_files import (
+    cleanup_files,
+    download_supported_files,
+    upload_images_from_response,
+)
 
 """
 Handles the event when a direct message is sent to the bot, retrieves the conversation context,
@@ -27,6 +31,7 @@ def app_messaged_callback(client: WebClient, event: dict, logger: Logger, say: S
     text = event.get("text")
     file_paths = []
     file_warnings = []
+    response_image_warnings = []
     waiting_message = None
 
     try:
@@ -80,9 +85,26 @@ def app_messaged_callback(client: WebClient, event: dict, logger: Logger, say: S
                 file_paths=file_paths,
             )
             mark_opencode_sent_file_ids(user_id, conversation_id, downloaded_file_ids)
+
+            upload_thread_ts = thread_ts or waiting_message["ts"]
+            generated_images, image_warnings, generated_temp_paths = upload_images_from_response(
+                client=client,
+                channel=channel_id,
+                thread_ts=upload_thread_ts,
+                response_text=response,
+            )
+            file_paths.extend(generated_temp_paths)
+            response_image_warnings.extend(image_warnings)
+
             if file_warnings:
                 warning_text = "\n".join([f"- {w}" for w in file_warnings[:5]])
                 response = f"{response}\n\nFile warnings:\n{warning_text}"
+            if generated_images:
+                uploaded_text = "\n".join([f"- {name}" for name in generated_images[:5]])
+                response = f"{response}\n\nUploaded images:\n{uploaded_text}"
+            if response_image_warnings:
+                warning_text = "\n".join([f"- {w}" for w in response_image_warnings[:5]])
+                response = f"{response}\n\nImage upload warnings:\n{warning_text}"
             safe_chat_update(
                 client=client,
                 channel=channel_id,
@@ -93,9 +115,10 @@ def app_messaged_callback(client: WebClient, event: dict, logger: Logger, say: S
     except Exception as e:
         logger.error(e)
         warning_text = ""
-        if file_warnings:
+        if file_warnings or response_image_warnings:
+            combined_warnings = file_warnings + response_image_warnings
             warning_text = "\n\nFile warnings:\n" + "\n".join(
-                [f"- {w}" for w in file_warnings[:5]]
+                [f"- {w}" for w in combined_warnings[:5]]
             )
         if waiting_message:
             safe_chat_update(
