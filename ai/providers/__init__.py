@@ -4,6 +4,7 @@ import re
 from state_store.get_user_state import get_user_state
 from ai.utils import build_spreadsheet_context
 from ai.utils import build_sqlite_context
+from ai.utils import build_skills_context
 
 from ..ai_constants import DEFAULT_SYSTEM_CONTENT
 from .anthropic import AnthropicAPI
@@ -74,12 +75,16 @@ def get_provider_response(
 
         spreadsheet_context = build_spreadsheet_context(file_paths)
         sqlite_context = build_sqlite_context() if _should_include_sqlite_context(prompt) else ""
+        skills_context = build_skills_context(prompt)
         context_parts = []
         if spreadsheet_context:
             context_parts.append(spreadsheet_context)
 
         if sqlite_context:
             context_parts.append(sqlite_context)
+
+        if skills_context:
+            context_parts.append(skills_context)
 
         if context_parts:
             joined_context = "\n\n".join(context_parts)

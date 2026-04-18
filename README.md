@@ -118,6 +118,27 @@ export OPENCODE_MODELS=github-copilot/gpt-5.3-codex,github-copilot/claude-sonnet
 
 If neither `OPENCODE_MODEL` nor `OPENCODE_MODELS` is set, the app will load models from `opencode models` automatically.
 
+### Skill Playbooks (Prompt Orchestration)
+
+You can define task-specific skill playbooks in markdown files, and the bot will auto-select relevant ones based on the user prompt.
+
+- Skills directory: `./skills`
+- File format: one `.md` playbook per skill
+- Optional override: `BOLTY_SKILLS_DIR=./skills`
+
+Each skill should include a `keywords:` line and practical workflow steps (for example, sales analysis or spreadsheet-to-SQLite upload instructions). Matching skill content is injected into prompt context as `Skill playbooks (auto-selected)` and used by the model to choose the right tools/workflow.
+
+Skill matching is weighted (keyword line > title/filename > body text) and the top matches are selected per prompt.
+By default, only one best-matching skill is injected into prompt context (not all skills).
+You can tune this behavior with `BOLTY_MAX_SKILLS_IN_PROMPT` and `BOLTY_MIN_SKILL_SCORE`.
+
+When model responses contain markdown tables, Slack output is auto-converted into fixed-width table blocks for better readability.
+
+Starter examples are included:
+
+- `skills/analyze_sales_data.md`
+- `skills/upload_sales_data_to_sqlite.md`
+
 OpenCode conversations are persisted per Slack thread/DM in a local mapping file:
 
 ```zsh

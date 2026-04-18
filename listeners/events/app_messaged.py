@@ -11,7 +11,7 @@ from ..listener_utils.listener_constants import DEFAULT_LOADING_TEXT
 from ..listener_utils.parse_conversation import parse_conversation
 from ..listener_utils.sqlite_upload_flow import process_sqlite_upload_message
 from ..listener_utils.sqlite_upload_flow import build_sqlite_upload_reply
-from ..listener_utils.slack_message import clamp_slack_text, summarize_for_slack
+from ..listener_utils.slack_message import clamp_slack_text, safe_chat_update
 from ..listener_utils.slack_files import cleanup_files, download_supported_files
 
 """
@@ -83,10 +83,12 @@ def app_messaged_callback(client: WebClient, event: dict, logger: Logger, say: S
             if file_warnings:
                 warning_text = "\n".join([f"- {w}" for w in file_warnings[:5]])
                 response = f"{response}\n\nFile warnings:\n{warning_text}"
-            client.chat_update(
+            safe_chat_update(
+                client=client,
                 channel=channel_id,
                 ts=waiting_message["ts"],
-                text=summarize_for_slack(user_id, response),
+                user_id=user_id,
+                text=response,
             )
     except Exception as e:
         logger.error(e)
@@ -96,10 +98,12 @@ def app_messaged_callback(client: WebClient, event: dict, logger: Logger, say: S
                 [f"- {w}" for w in file_warnings[:5]]
             )
         if waiting_message:
-            client.chat_update(
+            safe_chat_update(
+                client=client,
                 channel=channel_id,
                 ts=waiting_message["ts"],
-                text=clamp_slack_text(f"Received an error from Bolty:\n{e}{warning_text}"),
+                user_id=user_id,
+                text=f"Received an error from Bolty:\n{e}{warning_text}",
             )
         else:
             say(
