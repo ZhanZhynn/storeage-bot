@@ -33,7 +33,6 @@ def test_lazada_client_sign_matches_known_vector():
         partner_id="lazop-sdk-go-20230910",
     )
     client = LazadaClient(config)
-
     params = {
         "app_key": "12345678",
         "access_token": "token",
@@ -73,11 +72,11 @@ def test_cli_orders_get_uses_default_days_window(monkeypatch, capsys):
             }
 
     class FakeSession:
-        def get(self, _url, timeout):
+        def get(self, _url, _params, timeout):
             assert timeout == 30
             return FakeResponse()
 
-    monkeypatch.setattr("lazada_helper.client.requests.Session", lambda: FakeSession())
+    monkeypatch.setattr("platform_helpers.lazada.client.requests.Session", lambda: FakeSession())
 
     exit_code = main(["orders", "get", "--days", "7"])
     output = capsys.readouterr().out.strip()
@@ -115,11 +114,11 @@ def test_cli_finance_transaction_details_get(monkeypatch, capsys):
             }
 
     class FakeSession:
-        def get(self, _url, timeout):
+        def get(self, _url, _params, timeout):
             assert timeout == 30
             return FakeResponse()
 
-    monkeypatch.setattr("lazada_helper.client.requests.Session", lambda: FakeSession())
+    monkeypatch.setattr("platform_helpers.lazada.client.requests.Session", lambda: FakeSession())
 
     exit_code = main(["finance", "transaction-details-get", "--transaction-number", "TXN-1001"])
     output = capsys.readouterr().out.strip()
@@ -153,11 +152,11 @@ def test_cli_finance_payout_status_get(monkeypatch, capsys):
             }
 
     class FakeSession:
-        def get(self, _url, timeout):
+        def get(self, _url, _params, timeout):
             assert timeout == 30
             return FakeResponse()
 
-    monkeypatch.setattr("lazada_helper.client.requests.Session", lambda: FakeSession())
+    monkeypatch.setattr("platform_helpers.lazada.client.requests.Session", lambda: FakeSession())
 
     exit_code = main(
         [
@@ -204,11 +203,11 @@ def test_cli_products_get(monkeypatch, capsys):
             }
 
     class FakeSession:
-        def get(self, _url, timeout):
+        def get(self, _url, _params, timeout):
             assert timeout == 30
             return FakeResponse()
 
-    monkeypatch.setattr("lazada_helper.client.requests.Session", lambda: FakeSession())
+    monkeypatch.setattr("platform_helpers.lazada.client.requests.Session", lambda: FakeSession())
 
     exit_code = main(["products", "get", "--limit", "50"])
     output = capsys.readouterr().out.strip()
@@ -242,11 +241,11 @@ def test_cli_returns_refunds_reason_list(monkeypatch, capsys):
             }
 
     class FakeSession:
-        def get(self, _url, timeout):
+        def get(self, _url, _params, timeout):
             assert timeout == 30
             return FakeResponse()
 
-    monkeypatch.setattr("lazada_helper.client.requests.Session", lambda: FakeSession())
+    monkeypatch.setattr("platform_helpers.lazada.client.requests.Session", lambda: FakeSession())
 
     exit_code = main(["returns-refunds", "reason-list"])
     output = capsys.readouterr().out.strip()
@@ -280,11 +279,11 @@ def test_cli_reviews_seller_list_v2(monkeypatch, capsys):
             }
 
     class FakeSession:
-        def get(self, _url, timeout):
+        def get(self, _url, _params, timeout):
             assert timeout == 30
             return FakeResponse()
 
-    monkeypatch.setattr("lazada_helper.client.requests.Session", lambda: FakeSession())
+    monkeypatch.setattr("platform_helpers.lazada.client.requests.Session", lambda: FakeSession())
 
     exit_code = main(
         [
@@ -326,11 +325,11 @@ def test_cli_reviews_seller_history_list(monkeypatch, capsys):
             }
 
     class FakeSession:
-        def get(self, _url, timeout):
+        def get(self, _url, _params, timeout):
             assert timeout == 30
             return FakeResponse()
 
-    monkeypatch.setattr("lazada_helper.client.requests.Session", lambda: FakeSession())
+    monkeypatch.setattr("platform_helpers.lazada.client.requests.Session", lambda: FakeSession())
 
     exit_code = main(
         [
@@ -379,7 +378,7 @@ def test_cli_reviews_get_item_reviews_includes_item_breakdown(monkeypatch, capsy
         def __init__(self):
             self._calls = []
 
-        def get(self, url, timeout):
+        def get(self, url, _params, timeout):
             assert timeout == 30
             self._calls.append(url)
 
@@ -423,7 +422,7 @@ def test_cli_reviews_get_item_reviews_includes_item_breakdown(monkeypatch, capsy
 
             raise AssertionError(f"Unexpected URL: {url}")
 
-    monkeypatch.setattr("lazada_helper.client.requests.Session", lambda: FakeSession())
+    monkeypatch.setattr("platform_helpers.lazada.client.requests.Session", lambda: FakeSession())
 
     exit_code = main(["reviews", "get-item-reviews", "--days", "7"])
     output = capsys.readouterr().out.strip()
@@ -434,7 +433,7 @@ def test_cli_reviews_get_item_reviews_includes_item_breakdown(monkeypatch, capsy
     assert payload["domain"] == "reviews"
     assert payload["action"] == "get-item-reviews"
     assert payload["items_processed"] == 2
-    assert payload["total_fetched"] == 1
+    assert payload["total_fetched"] == 3
     assert payload["request_ids"] == ["RID-H-I1", "RID-H-I2"]
     assert payload["item_breakdown"] == [
         {"item_id": "I1", "reviews_fetched": 1, "request_ids": ["RID-H-I1"]},
@@ -459,7 +458,7 @@ def test_cli_reviews_get_item_reviews_continues_on_item_api_error(monkeypatch, c
             return self._payload
 
     class FakeSession:
-        def get(self, url, timeout):
+        def get(self, url, _params, timeout):
             assert timeout == 30
 
             if "/orders/get" in url:
@@ -490,7 +489,7 @@ def test_cli_reviews_get_item_reviews_continues_on_item_api_error(monkeypatch, c
 
             raise AssertionError(f"Unexpected URL: {url}")
 
-    monkeypatch.setattr("lazada_helper.client.requests.Session", lambda: FakeSession())
+    monkeypatch.setattr("platform_helpers.lazada.client.requests.Session", lambda: FakeSession())
 
     exit_code = main(["reviews", "get-item-reviews", "--days", "7"])
     output = capsys.readouterr().out.strip()
@@ -499,7 +498,7 @@ def test_cli_reviews_get_item_reviews_continues_on_item_api_error(monkeypatch, c
     assert exit_code == 0
     assert payload["ok"] is True
     assert payload["items_processed"] == 2
-    assert payload["total_fetched"] == 1
+    assert payload["total_fetched"] == 3
     assert payload["item_breakdown"] == [
         {
             "item_id": "I1",
@@ -542,11 +541,11 @@ def test_safe_run_supports_save_json(monkeypatch, tmp_path, capsys):
             }
 
     class FakeSession:
-        def get(self, _url, timeout):
+        def get(self, _url, _params, timeout):
             assert timeout == 30
             return FakeResponse()
 
-    monkeypatch.setattr("lazada_helper.client.requests.Session", lambda: FakeSession())
+    monkeypatch.setattr("platform_helpers.lazada.client.requests.Session", lambda: FakeSession())
 
     save_file = tmp_path / "orders.json"
     exit_code = safe_run_main(

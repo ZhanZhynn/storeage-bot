@@ -29,10 +29,10 @@ Provide a repeatable workflow for fetching Lazada seller data using the local Go
 - Finance examples:
   - `python3 -m lazada_helper.cli finance payout-status-get --created-after <ISO8601> --created-before <ISO8601> --limit 100 --offset 0 --max-pages 10`
   - `python3 -m lazada_helper.cli finance account-transactions-query --created-after <ISO8601> --created-before <ISO8601> --limit 100 --offset 0 --max-pages 10`
-  - `python3 -m lazada_helper.cli finance logistics-fee-detail --created-after <ISO8601> --created-before <ISO8601> --limit 100 --offset 0 --max-pages 10`
+  - `python3 -m lazada_helper.cli finance logistics-fee-detail --created-after <ISO8601> --created-before <ISO8601> --limit 100 --offset 0 --max-pages 3`
   - `python3 -m lazada_helper.cli finance transaction-details-get --transaction-number <TRANSACTION_NUMBER>`
 - Product examples:
-  - `python3 -m lazada_helper.cli products get --filter all --limit 100 --offset 0 --max-pages 10`
+  - `python3 -m lazada_helper.cli products get --filter all --limit 50 --offset 0 --max-pages 5`
   - `python3 -m lazada_helper.cli products item-get --item-id <ITEM_ID>`
 - Returns/refunds examples:
   - `python3 -m lazada_helper.cli returns-refunds return-detail-list --created-after <ISO8601> --created-before <ISO8601> --limit 100 --offset 0 --max-pages 10`
@@ -40,7 +40,7 @@ Provide a repeatable workflow for fetching Lazada seller data using the local Go
   - `python3 -m lazada_helper.cli returns-refunds reason-list`
   - `python3 -m lazada_helper.cli returns-refunds get-reverse-orders-for-seller --created-after <ISO8601> --created-before <ISO8601> --limit 100 --offset 0 --max-pages 10`
 - Reviews examples:
-  - `python3 -m lazada_helper.cli reviews seller-history-list --created-after <ISO8601> --created-before <ISO8601> --current 1 --limit 100 --max-pages 10`
+  - `python3 -m lazada_helper.cli reviews seller-history-list --created-after 1774972800 --created-before 1776614400 --current 1 --limit 100 --max-pages 10`
   - `python3 -m lazada_helper.cli reviews seller-list-v2 --item-id <ITEM_ID> [--id-list <REVIEW_ID_LIST>]`
   - `python3 -m lazada_helper.cli reviews seller-reply-add --id-list <REVIEW_ID_LIST> --content <REPLY_TEXT>`
 

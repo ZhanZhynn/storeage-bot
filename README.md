@@ -13,7 +13,7 @@ This Slack chatbot app template offers a customizable solution for integrating A
 
 Inspired by [ChatGPT-in-Slack](https://github.com/seratch/ChatGPT-in-Slack/tree/main)
 
-Before getting started, make sure you have a development workspace where you have permissions to install apps. If you don’t have one setup, go ahead and [create one](https://slack.com/create).
+Before getting started, make sure you have a development workspace where you have permissions to install apps. If you don't have one setup, go ahead and [create one](https://slack.com/create).
 ## Installation
 
 #### Prerequisites
@@ -78,35 +78,27 @@ Unlock the OpenAI models from your OpenAI account dashboard by clicking [create 
 export OPENAI_API_KEY=<your-api-key>
 ```
 
-##### OpenCode Session Setup (Local-Only)
+##### OpenCode CLI Setup
 
-To use your local OpenCode session instead of a provider API key, start OpenCode's local server and web interface:
+The bot routes all AI interactions through the **OpenCode CLI** (`opencode run`). The OpenCode web UI is **not** required.
+
+1. Install OpenCode and ensure `opencode` is in your `PATH`.
+
+2. **(Optional) Start an OpenCode session server** for persistent conversation sessions across Slack threads:
 
 ```zsh
 opencode web --hostname 127.0.0.1 --port 4096
 ```
 
-Then export the local OpenCode URL for this Slack bot process:
+Then set `OPENCODE_URL` so the bot attaches to it:
 
 ```zsh
 export OPENCODE_URL=http://127.0.0.1:4096
 ```
 
-The app can auto-start OpenCode web server when `app.py` launches:
+If `OPENCODE_URL` is not set, each `opencode run` invocation is standalone (no session persistence across thread replies).
 
-```zsh
-export AUTO_START_OPENCODE=true
-export OPENCODE_HOSTNAME=127.0.0.1
-export OPENCODE_PORT=4096
-```
-
-If you prefer to manage OpenCode separately, disable auto-start:
-
-```zsh
-export AUTO_START_OPENCODE=false
-```
-
-Choose which OpenCode model(s) should appear in Slack:
+3. Choose which OpenCode model(s) should appear in Slack:
 
 ```zsh
 # Single model
@@ -117,6 +109,20 @@ export OPENCODE_MODELS=github-copilot/gpt-5.3-codex,github-copilot/claude-sonnet
 ```
 
 If neither `OPENCODE_MODEL` nor `OPENCODE_MODELS` is set, the app will load models from `opencode models` automatically.
+
+Optional (if your OpenCode server uses a password):
+
+```zsh
+export OPENCODE_SERVER_PASSWORD=<your-password>
+```
+
+OpenCode conversations are persisted per Slack thread/DM in a local mapping file:
+
+```zsh
+export OPENCODE_SESSION_STORE=./data/opencode_sessions.json
+```
+
+This keeps each Slack thread in a single OpenCode session and sends only the latest user message each turn (instead of re-sending entire thread history).
 
 ### Skill Playbooks (Prompt Orchestration)
 
@@ -131,9 +137,41 @@ Each skill should include a `keywords:` line and practical workflow steps (for e
 Skill matching is weighted (keyword line > title/filename > body text) and the top matches are selected per prompt.
 By default, only one best-matching skill is injected into prompt context (not all skills).
 You can tune this behavior with `BOLTY_MAX_SKILLS_IN_PROMPT` and `BOLTY_MIN_SKILL_SCORE`.
-Skills can be organized in nested folders too (for example `skills/lazada/orders.md`).
+Skills can be organized in nested folders too (for example `skills/lazada/orders.md` or `skills/shopee/orders.md`).
 
-For Lazada API workflows, configure shared credentials once and the bot will inject a config hint automatically when prompts mention Lazada domains:
+### Platform Helpers (Multi-Marketplace Architecture)
+
+The bot supports deterministic CLI helpers for marketplace platforms. Each platform follows the same pattern:
+
+```
+platform_helpers/
+├── __init__.py          # Package init with registry exports
+├── registry.py          # Platform auto-discovery and registration
+├── lazada/              # Lazada API helper (fully implemented)
+│   ├── cli.py           # Argparse CLI with domain/action subcommands
+│   ├── client.py        # Signed API client
+│   ├── safe_run.py      # Bot-safe wrapper with JSON output
+│   ├── orders.py        # Order domain functions
+│   ├── finance.py       # Finance domain functions
+│   ├── products.py      # Product domain functions
+│   ├── reviews.py       # Review domain functions
+│   └── returns_refunds.py  # Returns/refunds domain functions
+└── shopee/              # Shopee API helper (scaffold — add your modules here)
+    └── __init__.py
+```
+
+#### Adding a New Platform
+
+1. Create `platform_helpers/<name>/` with the same module pattern as `lazada/`
+2. Register it in `platform_helpers/registry.py` (add a `PlatformHelper` entry)
+3. Add skill playbooks in `skills/<name>/`
+4. Set the platform's env vars (e.g., `BOLTY_SHOPEE_PARTNER_ID`, etc.)
+
+The AI context layer auto-discovers registered platforms — no changes needed in the AI/listener code.
+
+#### Lazada Platform Helper
+
+Configure shared credentials for Lazada API workflows:
 
 ```zsh
 export BOLTY_LAZADA_APP_KEY=<your-lazada-app-key>
@@ -143,122 +181,46 @@ export BOLTY_LAZADA_REGION=MY
 export BOLTY_LAZADA_API_BASE=https://api.lazada.com.my/rest
 ```
 
-### Deterministic Lazada Helper (Orders MVP)
-
-This repo includes a deterministic Lazada helper CLI to fetch order data through `/orders/get` without hand-crafting signatures in prompts.
-
-Run example:
+Run examples:
 
 ```zsh
-python3 -m lazada_helper.cli orders get --days 7 --status all --limit 100 --max-pages 10
+python3 -m platform_helpers.lazada.cli orders get --days 7 --status all --limit 100 --max-pages 10
+
+python3 -m platform_helpers.lazada.cli finance payout-status-get \
+  --created-after 2026-04-01T00:00:00+00:00 \
+  --created-before 2026-04-21T00:00:00+00:00 \
+  --limit 100 --offset 0 --max-pages 10
+
+python3 -m platform_helpers.lazada.cli products get \
+  --filter all --limit 100 --offset 0 --max-pages 10
+
+python3 -m platform_helpers.lazada.cli returns-refunds return-detail-list \
+  --created-after 2026-04-01T00:00:00+00:00 \
+  --created-before 2026-04-21T00:00:00+00:00 \
+  --limit 100 --offset 0 --max-pages 10
+
+python3 -m platform_helpers.lazada.cli reviews get-item-reviews \
+  --days 30 --sort desc
 ```
 
-Optional explicit filters:
+Safe wrapper for bot/tool execution:
 
 ```zsh
-python3 -m lazada_helper.cli orders get \
-  --created-after 2026-04-01T00:00:00+00:00 \
-  --created-before 2026-04-21T00:00:00+00:00 \
-  --status shipped \
-  --limit 50 \
-  --offset 0
+python3 -m platform_helpers.lazada.safe_run -- orders get --days 7 --status all --limit 100 --max-pages 10
 ```
 
-Output is JSON with `ok`, `status`, `total_fetched`, `orders`, paging fields, and Lazada `request_ids`.
-Prefer safe wrapper for bot/tool execution:
+Backward-compatible aliases still work:
 
 ```zsh
-python3 -m lazada_helper.safe_run -- orders get --days 7 --status all --limit 100 --max-pages 10
+python3 -m lazada_helper.cli orders get --days 7
+python3 -m lazada_helper.safe_run -- orders get --days 7
 ```
 
-Optional save without shell redirection:
-
-```zsh
-python3 -m lazada_helper.safe_run --save-json data/lazada_orders.json -- orders get --days 7 --status all --limit 100 --max-pages 10
-```
-
-Run helper commands directly (without `>` redirection) so the bot can parse stdout immediately.
-If tool output is truncated, read the emitted `outputPath` file for full JSON.
-
-Finance helper examples:
-
-```zsh
-python3 -m lazada_helper.cli finance payout-status-get \
-  --created-after 2026-04-01T00:00:00+00:00 \
-  --created-before 2026-04-21T00:00:00+00:00 \
-  --limit 100 --offset 0 --max-pages 10
-
-python3 -m lazada_helper.cli finance account-transactions-query \
-  --created-after 2026-04-01T00:00:00+00:00 \
-  --created-before 2026-04-21T00:00:00+00:00 \
-  --limit 100 --offset 0 --max-pages 10
-
-python3 -m lazada_helper.cli finance logistics-fee-detail \
-  --created-after 2026-04-01T00:00:00+00:00 \
-  --created-before 2026-04-21T00:00:00+00:00 \
-  --limit 100 --offset 0 --max-pages 10
-
-python3 -m lazada_helper.cli finance transaction-details-get \
-  --transaction-number TXN-1001
-
-python3 -m lazada_helper.cli products get \
-  --filter all \
-  --limit 100 \
-  --offset 0 \
-  --max-pages 10
-
-python3 -m lazada_helper.cli products item-get \
-  --item-id 123456789
-
-python3 -m lazada_helper.cli returns-refunds return-detail-list \
-  --created-after 2026-04-01T00:00:00+00:00 \
-  --created-before 2026-04-21T00:00:00+00:00 \
-  --limit 100 --offset 0 --max-pages 10
-
-python3 -m lazada_helper.cli returns-refunds return-history-list \
-  --created-after 2026-04-01T00:00:00+00:00 \
-  --created-before 2026-04-21T00:00:00+00:00 \
-  --limit 100 --offset 0 --max-pages 10
-
-python3 -m lazada_helper.cli returns-refunds reason-list
-
-python3 -m lazada_helper.cli returns-refunds get-reverse-orders-for-seller \
-  --created-after 2026-04-01T00:00:00+00:00 \
-  --created-before 2026-04-21T00:00:00+00:00 \
-  --limit 100 --offset 0 --max-pages 10
-
-python3 -m lazada_helper.cli reviews seller-history-list \
-  --created-after 2026-04-01T00:00:00+00:00 \
-  --created-before 2026-04-21T00:00:00+00:00 \
-  --item-id 123456789 \
-  --current 1 --limit 100 --max-pages 10
-
-python3 -m lazada_helper.cli reviews seller-list-v2 \
-  --item-id 123456789
-
-python3 -m lazada_helper.cli reviews seller-reply-add \
-  --id-list 12345,12346 \
-  --content "Thank you for your feedback"
-
-python3 -m lazada_helper.cli reviews get-item-reviews \
-  --days 30 \
-  --sort desc
-```
+Output is JSON with `ok`, `status`, `total_fetched`, records, paging fields, and API `request_ids`.
 
 When model responses contain markdown tables, Slack output is auto-converted into fixed-width table blocks for better readability.
 
-Starter examples are included:
-
-- `skills/analyze_sales_data.md`
-- `skills/upload_sales_data_to_sqlite.md`
-
-OpenCode conversations are persisted per Slack thread/DM in a local mapping file:
-
-```zsh
-export OPENCODE_SESSION_STORE=./data/opencode_sessions.json
-```
-
-This keeps each Slack thread in a single OpenCode session and sends only the latest user message each turn (instead of re-sending entire thread history).
+### File Uploads
 
 File uploads are supported for OpenCode requests. Supported file types are images (`.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`) and spreadsheet formats (`.xlsx`, `.xls`, `.csv`).
 
@@ -270,7 +232,9 @@ The default system prompt is only prepended on the first OpenCode message in a S
 
 Make sure your Slack app has the `files:read` bot scope and is reinstalled after manifest updates, otherwise file downloads will fail and the bot will post a warning in-thread.
 
-SQLite upload flow is also supported for spreadsheet files in messages/mentions. By default, uploads use a repo-local database file:
+### SQLite Upload Flow
+
+SQLite upload flow is supported for spreadsheet files in messages/mentions. By default, uploads use a repo-local database file:
 
 ```zsh
 ./data/bolty.db
@@ -300,14 +264,6 @@ You can also start a guided flow via slash command:
 ```
 
 After running the command, reply in the started thread with your spreadsheet attachment and any follow-up instructions.
-
-Optional (if your OpenCode server uses a password):
-
-```zsh
-export OPENCODE_SERVER_PASSWORD=<your-password>
-```
-
-Once the bot is running, open the Slack app home and choose `OpenCode Session (OpenCode)` from the provider dropdown.
 
 ### Setup Your Local Project
 ```zsh
@@ -353,16 +309,23 @@ ruff format .
 
 Every incoming request is routed to a "listener". Inside this directory, we group each listener based on the Slack Platform feature used, so `/listeners/commands` handles incoming [Slash Commands](https://api.slack.com/interactivity/slash-commands) requests, `/listeners/events` handles [Events](https://api.slack.com/apis/events-api) and so on.
 
+The shared AI response lifecycle (file downloads, provider calls, image/spreadsheet uploads, error handling) is in `listeners/listener_utils/ai_handler.py`. The event handlers (`app_mentioned.py`, `app_messaged.py`) are thin adapters.
+
 ### `/ai`
 
 * `ai_constants.py`: Defines constants used throughout the AI module.
+
 
 <a name="byo-llm"></a>
 #### `ai/providers`
 This module contains classes for communicating with different API providers, such as [Anthropic](https://www.anthropic.com/), [OpenAI](https://openai.com/), and [Vertex AI](cloud.google.com/vertex-ai). To add your own LLM, create a new class for it using the `base_api.py` as an example, then update `ai/providers/__init__.py` to include and utilize your new class for API communication.
 
 * `__init__.py`: 
-This file contains utility functions for handling responses from the provider APIs and retrieving available providers.
+This file contains utility functions for handling responses from the provider APIs and retrieving available providers. It dynamically injects platform context (Lazada, Shopee, etc.) based on prompt keywords.
+
+### `/platform_helpers`
+
+Marketplace-specific API helpers organized by platform. Each platform sub-package follows the same pattern: `client.py` → domain modules → `cli.py` → `safe_run.py`. The `registry.py` enables auto-discovery so the AI layer injects context for any configured platform.
 
 ### `/state_store`
 
