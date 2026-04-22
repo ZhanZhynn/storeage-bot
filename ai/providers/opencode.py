@@ -211,6 +211,9 @@ class OpenCodeAPI(BaseAPIProvider):
 
     def _extract_text_from_events(self, output: str) -> str:
         chunks = []
+        current_step_chunks = []
+        final_step_chunks = []
+
         for line in output.splitlines():
             line = line.strip()
             if not line:
@@ -220,11 +223,25 @@ class OpenCodeAPI(BaseAPIProvider):
             except json.JSONDecodeError:
                 continue
 
-            event_type = event.get("type") if isinstance(event, dict) else None
-            if event_type != "text":
+            if not isinstance(event, dict):
                 continue
 
-            part = event.get("part", {}) if isinstance(event, dict) else {}
+            event_type = str(event.get("type") or "")
+            part = event.get("part", {}) if isinstance(event.get("part"), dict) else {}
+            normalized_type = event_type.replace("-", "_")
+
+            if normalized_type in {"step_start"}:
+                current_step_chunks = []
+                continue
+
+            if normalized_type in {"step_finish"}:
+                reason = str(part.get("reason") or event.get("reason") or "").strip().lower()
+                if reason == "stop":
+                    final_step_chunks = list(current_step_chunks)
+                continue
+
+            if normalized_type != "text":
+                continue
             text = ""
             if isinstance(part, dict):
                 text = part.get("text", "")
@@ -232,6 +249,10 @@ class OpenCodeAPI(BaseAPIProvider):
                 text = self._extract_text(event)
             if text:
                 chunks.append(text)
+                current_step_chunks.append(text)
+
+        if final_step_chunks:
+            return "\n".join(final_step_chunks).strip()
 
         return "\n".join(chunks).strip()
 

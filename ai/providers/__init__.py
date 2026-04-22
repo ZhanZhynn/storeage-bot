@@ -4,6 +4,7 @@ import re
 from state_store.get_user_state import get_user_state
 from ai.utils import build_spreadsheet_context
 from ai.utils import build_sqlite_context
+from ai.utils import build_lazada_context
 from ai.utils import build_skills_context
 
 from ..ai_constants import DEFAULT_SYSTEM_CONTENT
@@ -75,6 +76,7 @@ def get_provider_response(
 
         spreadsheet_context = build_spreadsheet_context(file_paths)
         sqlite_context = build_sqlite_context() if _should_include_sqlite_context(prompt) else ""
+        lazada_context = build_lazada_context() if _should_include_lazada_context(prompt) else ""
         skills_context = build_skills_context(prompt)
         context_parts = []
         if spreadsheet_context:
@@ -82,6 +84,9 @@ def get_provider_response(
 
         if sqlite_context:
             context_parts.append(sqlite_context)
+
+        if lazada_context:
+            context_parts.append(lazada_context)
 
         if skills_context:
             context_parts.append(skills_context)
@@ -131,6 +136,30 @@ def _should_include_sqlite_context(prompt: str) -> bool:
         return True
 
     return bool(re.search(r"\bfrom\s+[a-zA-Z_][a-zA-Z0-9_]*\b", lowered))
+
+
+def _should_include_lazada_context(prompt: str) -> bool:
+    lowered = (prompt or "").lower()
+    lazada_keywords = (
+        "lazada",
+        "orders",
+        "order",
+        "products",
+        "product",
+        "finance",
+        "returns",
+        "return",
+        "refunds",
+        "refund",
+        "review",
+        "reviews",
+        "reverse",
+        "returns-refunds",
+        "seller",
+        "getorders",
+        "getproducts",
+    )
+    return any(keyword in lowered for keyword in lazada_keywords)
 
 
 def get_opencode_sent_file_ids(user_id: str, conversation_id: Optional[str]) -> set[str]:

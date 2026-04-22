@@ -9,11 +9,18 @@ from ai.utils.spreadsheet_utils import (
     analyze_spreadsheet,
     build_spreadsheet_context,
     format_analysis,
+    suggest_schema_column_mapping,
     suggest_sqlite_upload_questions,
     upload_spreadsheet_to_sqlite,
     verify_spreadsheet_against_sqlite_schema,
 )
-from listeners.listener_utils.sqlite_upload_flow import start_sqlite_upload_session
+from listeners.listener_utils.sqlite_upload_flow import (
+    _append_session_files,
+    _extract_schema_type_updates,
+    _get_session_file_paths,
+    _update_session_from_user_text,
+    start_sqlite_upload_session,
+)
 
 
 def test_analyze_csv_extracts_headers_and_numeric_stats(tmp_path: Path):
@@ -178,6 +185,89 @@ def test_upload_spreadsheet_to_sqlite_can_create_table(tmp_path: Path):
     assert rows == [(1, 10)]
 
 
+def test_suggest_schema_column_mapping_handles_punctuation_variants(tmp_path: Path):
+    db_path = tmp_path / "example.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "CREATE TABLE sales (Return_Refund_Status TEXT, Tracking_Number TEXT, Username_Buyer TEXT)"
+        )
+
+    mapping = suggest_schema_column_mapping(
+        sqlite_db_path=str(db_path),
+        table_name="sales",
+        spreadsheet_columns=["Return_/_Refund_Status", "Tracking_Number*", "Username_(Buyer)"],
+    )
+
+    assert mapping["mapping"] == {
+        "Return_Refund_Status": "Return_/_Refund_Status",
+        "Tracking_Number": "Tracking_Number*",
+        "Username_Buyer": "Username_(Buyer)",
+    }
+
+
+def test_upload_spreadsheet_to_sqlite_can_apply_mapping_and_text_cast(tmp_path: Path):
+    csv_path = tmp_path / "sheet.csv"
+    csv_path.write_text("Zip_Code,Username_(Buyer)\n02115,user1\n10001,user2\n", encoding="utf-8")
+
+    db_path = tmp_path / "example.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute("CREATE TABLE customers (Zip_Code INTEGER, Username_Buyer TEXT)")
+
+    result = upload_spreadsheet_to_sqlite(
+        file_path=str(csv_path),
+        sqlite_db_path=str(db_path),
+        table_name="customers",
+        strict_schema=True,
+        apply_suggested_mapping=True,
+        type_casts={"Zip_Code": "TEXT"},
+    )
+
+    assert result["row_count_uploaded"] == 2
+    assert result["verification"]["mapping_applied"]["Username_Buyer"] == "Username_(Buyer)"
+
+    with sqlite3.connect(db_path) as connection:
+        rows = connection.execute("SELECT Zip_Code, Username_Buyer FROM customers ORDER BY rowid").fetchall()
+    assert rows == [(2115, "user1"), (10001, "user2")]
+
+
+def test_update_session_from_user_text_parses_mode_map_and_cast():
+    session = {
+        "strict_schema": True,
+        "apply_suggested_mapping": False,
+        "type_casts": {},
+    }
+
+    updated = _update_session_from_user_text(session, "mode map")
+    assert updated["apply_suggested_mapping"] is True
+
+    updated = _update_session_from_user_text(updated, "cast Zip_Code as TEXT")
+    assert updated["type_casts"]["Zip_Code"] == "TEXT"
+
+
+def test_update_session_from_user_text_parses_mode_llm():
+    session = {
+        "strict_schema": True,
+        "use_llm_resolution": False,
+        "apply_suggested_mapping": True,
+        "column_mapping": {"Username_Buyer": "Username_(Buyer)"},
+    }
+
+    updated = _update_session_from_user_text(session, "mode llm")
+    assert updated["use_llm_resolution"] is True
+    assert updated["apply_suggested_mapping"] is False
+    assert updated["column_mapping"] == {}
+
+
+def test_update_session_from_user_text_parses_approve_schema():
+    session = {
+        "table_name": "new_table",
+        "schema_review_approved": False,
+    }
+
+    updated = _update_session_from_user_text(session, "approve schema")
+    assert updated["schema_review_approved"] is True
+
+
 def test_start_sqlite_upload_session_uses_repo_db_path(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("BOLTY_SQLITE_DB_PATH", str(tmp_path / "repo.db"))
 
@@ -190,3 +280,34 @@ def test_start_sqlite_upload_session_uses_repo_db_path(tmp_path: Path, monkeypat
 
     assert "repo.db" in message
     assert "sales" in message
+    assert "mode map" in message
+    assert "approve schema" in message
+
+
+def test_append_session_files_deduplicates_same_file_content(tmp_path: Path):
+    csv_a = tmp_path / "a.csv"
+    csv_b = tmp_path / "b.csv"
+    csv_a.write_text("id,val\n1,10\n", encoding="utf-8")
+    csv_b.write_text("id,val\n1,10\n", encoding="utf-8")
+
+    session = {
+        "file_paths": [],
+        "seen_file_hashes": [],
+    }
+
+    session = _append_session_files("U1:C1:T1", session, [str(csv_a), str(csv_b)])
+
+    assert len(_get_session_file_paths(session)) == 1
+    assert len(session["seen_file_hashes"]) == 1
+
+
+def test_extract_schema_type_updates_supports_bulk_assignments():
+    updates = _extract_schema_type_updates(
+        "set schema: Zip_Code=text, Shopee_Rebate=INTEGER; Order_Creation_Date=date"
+    )
+
+    assert updates == {
+        "Zip_Code": "TEXT",
+        "Shopee_Rebate": "INTEGER",
+        "Order_Creation_Date": "DATE",
+    }

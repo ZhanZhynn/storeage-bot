@@ -19,12 +19,14 @@ Load spreadsheet sales data into a SQLite table safely and predictably.
 2. Resolve target SQLite DB location and available table names.
 3. Determine target table and sheet (if multiple sheets).
 4. Verify spreadsheet columns against table schema.
-5. Upload with the requested mode (append/replace) and report rows written.
+5. Infer the datatype based on the column name, don't just upload as text, try to cast them. For example, cast price as real instead eventhough the datatype in the spreadsheet is text. If unsure of the datatype, ask the user.
+6. Upload with the requested mode (append/replace) and report rows written.
 
 ## Guardrails
 - If strict schema mode is enabled, fail on missing required columns or type mismatches.
 - If table does not exist, only create it when explicitly allowed.
 - Report mismatches and suggest next steps (shared columns, create table, or map columns).
+- Don't delete, drop table or remove rows.
 
 ## Output Style
 - Confirm DB path, table, sheet, and row count uploaded.

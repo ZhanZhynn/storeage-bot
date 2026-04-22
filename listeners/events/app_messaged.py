@@ -12,10 +12,12 @@ from ..listener_utils.parse_conversation import parse_conversation
 from ..listener_utils.sqlite_upload_flow import process_sqlite_upload_message
 from ..listener_utils.sqlite_upload_flow import build_sqlite_upload_reply
 from ..listener_utils.slack_message import clamp_slack_text, safe_chat_update
+from ..listener_utils.slack_reactions import add_working_reaction, remove_working_reaction
 from ..listener_utils.slack_files import (
     cleanup_files,
     download_supported_files,
     upload_images_from_response,
+    upload_spreadsheets_from_response,
 )
 
 """
@@ -27,15 +29,18 @@ and generates an AI response.
 def app_messaged_callback(client: WebClient, event: dict, logger: Logger, say: Say):
     channel_id = event.get("channel")
     thread_ts = event.get("thread_ts")
+    message_ts = event.get("ts")
     user_id = event.get("user")
     text = event.get("text")
     file_paths = []
     file_warnings = []
-    response_image_warnings = []
+    response_file_warnings = []
     waiting_message = None
+    reaction_set = False
 
     try:
         if event.get("channel_type") == "im":
+            reaction_set = add_working_reaction(client, channel_id, message_ts)
             conversation_context = ""
             conversation_id = f"{channel_id}:{thread_ts or event.get('ts')}"
 
@@ -94,7 +99,16 @@ def app_messaged_callback(client: WebClient, event: dict, logger: Logger, say: S
                 response_text=response,
             )
             file_paths.extend(generated_temp_paths)
-            response_image_warnings.extend(image_warnings)
+            response_file_warnings.extend(image_warnings)
+
+            generated_spreadsheets, spreadsheet_warnings, spreadsheet_temp_paths = upload_spreadsheets_from_response(
+                client=client,
+                channel=channel_id,
+                thread_ts=upload_thread_ts,
+                response_text=response,
+            )
+            file_paths.extend(spreadsheet_temp_paths)
+            response_file_warnings.extend(spreadsheet_warnings)
 
             if file_warnings:
                 warning_text = "\n".join([f"- {w}" for w in file_warnings[:5]])
@@ -102,9 +116,12 @@ def app_messaged_callback(client: WebClient, event: dict, logger: Logger, say: S
             if generated_images:
                 uploaded_text = "\n".join([f"- {name}" for name in generated_images[:5]])
                 response = f"{response}\n\nUploaded images:\n{uploaded_text}"
-            if response_image_warnings:
-                warning_text = "\n".join([f"- {w}" for w in response_image_warnings[:5]])
-                response = f"{response}\n\nImage upload warnings:\n{warning_text}"
+            if generated_spreadsheets:
+                uploaded_text = "\n".join([f"- {name}" for name in generated_spreadsheets[:5]])
+                response = f"{response}\n\nUploaded spreadsheets:\n{uploaded_text}"
+            if response_file_warnings:
+                warning_text = "\n".join([f"- {w}" for w in response_file_warnings[:5]])
+                response = f"{response}\n\nFile upload warnings:\n{warning_text}"
             safe_chat_update(
                 client=client,
                 channel=channel_id,
@@ -115,8 +132,8 @@ def app_messaged_callback(client: WebClient, event: dict, logger: Logger, say: S
     except Exception as e:
         logger.error(e)
         warning_text = ""
-        if file_warnings or response_image_warnings:
-            combined_warnings = file_warnings + response_image_warnings
+        if file_warnings or response_file_warnings:
+            combined_warnings = file_warnings + response_file_warnings
             warning_text = "\n\nFile warnings:\n" + "\n".join(
                 [f"- {w}" for w in combined_warnings[:5]]
             )
@@ -134,4 +151,6 @@ def app_messaged_callback(client: WebClient, event: dict, logger: Logger, say: S
                 thread_ts=thread_ts,
             )
     finally:
+        if reaction_set:
+            remove_working_reaction(client, channel_id, message_ts)
         cleanup_files(file_paths)

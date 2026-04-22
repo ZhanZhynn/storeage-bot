@@ -131,6 +131,119 @@ Each skill should include a `keywords:` line and practical workflow steps (for e
 Skill matching is weighted (keyword line > title/filename > body text) and the top matches are selected per prompt.
 By default, only one best-matching skill is injected into prompt context (not all skills).
 You can tune this behavior with `BOLTY_MAX_SKILLS_IN_PROMPT` and `BOLTY_MIN_SKILL_SCORE`.
+Skills can be organized in nested folders too (for example `skills/lazada/orders.md`).
+
+For Lazada API workflows, configure shared credentials once and the bot will inject a config hint automatically when prompts mention Lazada domains:
+
+```zsh
+export BOLTY_LAZADA_APP_KEY=<your-lazada-app-key>
+export BOLTY_LAZADA_APP_SECRET=<your-lazada-app-secret>
+export BOLTY_LAZADA_ACCESS_TOKEN=<your-lazada-access-token>
+export BOLTY_LAZADA_REGION=MY
+export BOLTY_LAZADA_API_BASE=https://api.lazada.com.my/rest
+```
+
+### Deterministic Lazada Helper (Orders MVP)
+
+This repo includes a deterministic Lazada helper CLI to fetch order data through `/orders/get` without hand-crafting signatures in prompts.
+
+Run example:
+
+```zsh
+python3 -m lazada_helper.cli orders get --days 7 --status all --limit 100 --max-pages 10
+```
+
+Optional explicit filters:
+
+```zsh
+python3 -m lazada_helper.cli orders get \
+  --created-after 2026-04-01T00:00:00+00:00 \
+  --created-before 2026-04-21T00:00:00+00:00 \
+  --status shipped \
+  --limit 50 \
+  --offset 0
+```
+
+Output is JSON with `ok`, `status`, `total_fetched`, `orders`, paging fields, and Lazada `request_ids`.
+Prefer safe wrapper for bot/tool execution:
+
+```zsh
+python3 -m lazada_helper.safe_run -- orders get --days 7 --status all --limit 100 --max-pages 10
+```
+
+Optional save without shell redirection:
+
+```zsh
+python3 -m lazada_helper.safe_run --save-json data/lazada_orders.json -- orders get --days 7 --status all --limit 100 --max-pages 10
+```
+
+Run helper commands directly (without `>` redirection) so the bot can parse stdout immediately.
+If tool output is truncated, read the emitted `outputPath` file for full JSON.
+
+Finance helper examples:
+
+```zsh
+python3 -m lazada_helper.cli finance payout-status-get \
+  --created-after 2026-04-01T00:00:00+00:00 \
+  --created-before 2026-04-21T00:00:00+00:00 \
+  --limit 100 --offset 0 --max-pages 10
+
+python3 -m lazada_helper.cli finance account-transactions-query \
+  --created-after 2026-04-01T00:00:00+00:00 \
+  --created-before 2026-04-21T00:00:00+00:00 \
+  --limit 100 --offset 0 --max-pages 10
+
+python3 -m lazada_helper.cli finance logistics-fee-detail \
+  --created-after 2026-04-01T00:00:00+00:00 \
+  --created-before 2026-04-21T00:00:00+00:00 \
+  --limit 100 --offset 0 --max-pages 10
+
+python3 -m lazada_helper.cli finance transaction-details-get \
+  --transaction-number TXN-1001
+
+python3 -m lazada_helper.cli products get \
+  --filter all \
+  --limit 100 \
+  --offset 0 \
+  --max-pages 10
+
+python3 -m lazada_helper.cli products item-get \
+  --item-id 123456789
+
+python3 -m lazada_helper.cli returns-refunds return-detail-list \
+  --created-after 2026-04-01T00:00:00+00:00 \
+  --created-before 2026-04-21T00:00:00+00:00 \
+  --limit 100 --offset 0 --max-pages 10
+
+python3 -m lazada_helper.cli returns-refunds return-history-list \
+  --created-after 2026-04-01T00:00:00+00:00 \
+  --created-before 2026-04-21T00:00:00+00:00 \
+  --limit 100 --offset 0 --max-pages 10
+
+python3 -m lazada_helper.cli returns-refunds reason-list
+
+python3 -m lazada_helper.cli returns-refunds get-reverse-orders-for-seller \
+  --created-after 2026-04-01T00:00:00+00:00 \
+  --created-before 2026-04-21T00:00:00+00:00 \
+  --limit 100 --offset 0 --max-pages 10
+
+python3 -m lazada_helper.cli reviews seller-history-list \
+  --created-after 2026-04-01T00:00:00+00:00 \
+  --created-before 2026-04-21T00:00:00+00:00 \
+  --item-id 123456789 \
+  --current 1 --limit 100 --max-pages 10
+
+python3 -m lazada_helper.cli reviews seller-list-v2 \
+  --item-id 123456789
+
+python3 -m lazada_helper.cli reviews seller-reply-add \
+  --id-list 12345,12346 \
+  --content "Thank you for your feedback"
+
+python3 -m lazada_helper.cli reviews get-item-reviews \
+  --days 30 \
+  --sort desc
+```
 
 When model responses contain markdown tables, Slack output is auto-converted into fixed-width table blocks for better readability.
 

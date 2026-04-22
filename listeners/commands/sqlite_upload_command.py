@@ -4,6 +4,7 @@ from slack_bolt import Ack, BoltContext, Say
 from slack_sdk import WebClient
 
 from ..listener_utils.slack_message import clamp_slack_text
+from ..listener_utils.slack_reactions import add_working_reaction, remove_working_reaction
 from ..listener_utils.sqlite_upload_flow import start_sqlite_upload_session
 
 
@@ -29,13 +30,20 @@ def sqlite_upload_callback(
         )
         thread_ts = parent.get("ts") if isinstance(parent, dict) else None
 
-        intro = start_sqlite_upload_session(
-            user_id=user_id,
-            channel_id=channel_id,
-            thread_ts=thread_ts,
-            initial_text=text,
-        )
-        say(text=clamp_slack_text(intro), thread_ts=thread_ts)
+        try:
+            if thread_ts:
+                add_working_reaction(client, channel_id, thread_ts)
+
+            intro = start_sqlite_upload_session(
+                user_id=user_id,
+                channel_id=channel_id,
+                thread_ts=thread_ts,
+                initial_text=text,
+            )
+            say(text=clamp_slack_text(intro), thread_ts=thread_ts)
+        finally:
+            if thread_ts:
+                remove_working_reaction(client, channel_id, thread_ts)
     except Exception as error:
         logger.error(error)
         client.chat_postEphemeral(

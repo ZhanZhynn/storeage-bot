@@ -2,7 +2,6 @@ import os
 import re
 from pathlib import Path
 
-
 DEFAULT_SKILLS_DIR = "./skills"
 MAX_SKILLS_IN_PROMPT = 1
 MIN_SKILL_SCORE = 4
@@ -10,7 +9,7 @@ MIN_SKILL_SCORE = 4
 
 def build_skills_context(prompt: str, max_skills: int = MAX_SKILLS_IN_PROMPT) -> str:
     configured_max = _read_int_env("BOLTY_MAX_SKILLS_IN_PROMPT", max_skills)
-    configured_max = max(1, configured_max)
+    configured_max = max(3, configured_max)
 
     skills = _load_skills()
     if not skills:
@@ -47,7 +46,7 @@ def _load_skills() -> list[dict[str, str]]:
         return []
 
     skills = []
-    for file_path in sorted(skills_dir.glob("*.md")):
+    for file_path in sorted(skills_dir.rglob("*.md")):
         try:
             content = file_path.read_text(encoding="utf-8").strip()
         except Exception:

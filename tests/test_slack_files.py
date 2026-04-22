@@ -2,7 +2,9 @@ from pathlib import Path
 
 from listeners.listener_utils.slack_files import (
     extract_response_image_targets,
+    extract_response_spreadsheet_targets,
     upload_images_from_response,
+    upload_spreadsheets_from_response,
 )
 
 
@@ -105,3 +107,53 @@ def test_upload_images_from_response_uploads_plain_relative_path(tmp_path: Path,
     assert temp_paths == []
     assert len(client.upload_calls) == 1
     assert client.upload_calls[0]["title"] == "chart.png"
+
+
+def test_extract_response_spreadsheet_targets_detects_paths_and_url():
+    response = (
+        "Saved report to `outputs/trending_shopee_products.xlsx`\n"
+        "CSV here: /tmp/trending.csv\n"
+        "Remote backup: https://example.com/reports/final.xls"
+    )
+
+    local_paths, remote_urls = extract_response_spreadsheet_targets(response)
+
+    assert "outputs/trending_shopee_products.xlsx" in local_paths
+    assert "/tmp/trending.csv" in local_paths
+    assert "https://example.com/reports/final.xls" in remote_urls
+
+
+def test_upload_spreadsheets_from_response_uploads_local_spreadsheet(tmp_path: Path):
+    spreadsheet_path = tmp_path / "outputs" / "trending_shopee_products.xlsx"
+    spreadsheet_path.parent.mkdir(parents=True, exist_ok=True)
+    spreadsheet_path.write_bytes(b"dummy xlsx bytes")
+
+    client = _FakeSlackClient()
+    text = f"Generated file: `{spreadsheet_path}`"
+    uploaded, warnings, temp_paths = upload_spreadsheets_from_response(
+        client=client,
+        channel="C123",
+        thread_ts="111.222",
+        response_text=text,
+    )
+
+    assert uploaded == ["trending_shopee_products.xlsx"]
+    assert warnings == []
+    assert temp_paths == []
+    assert len(client.upload_calls) == 1
+    assert client.upload_calls[0]["title"] == "trending_shopee_products.xlsx"
+
+
+def test_upload_spreadsheets_from_response_warns_when_local_file_missing():
+    client = _FakeSlackClient()
+    uploaded, warnings, temp_paths = upload_spreadsheets_from_response(
+        client=client,
+        channel="C123",
+        thread_ts="111.222",
+        response_text="Spreadsheet path: `/tmp/does-not-exist-12345.xlsx`",
+    )
+
+    assert uploaded == []
+    assert temp_paths == []
+    assert len(warnings) == 1
+    assert "local file not found" in warnings[0]

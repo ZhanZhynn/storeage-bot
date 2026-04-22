@@ -95,6 +95,14 @@ def _humanize_action(command_text: str) -> str:
         return "confirm upload"
     if lowered == "mode shared":
         return "use shared mode"
+    if lowered == "mode map":
+        return "apply suggested mapping"
+    if lowered == "mode llm":
+        return "llm schema resolution"
+    if lowered.startswith("cast ") and " as " in lowered:
+        return command_text
+    if lowered == "schema all":
+        return "show all schema columns"
     if lowered == "cancel":
         return "cancel"
     return command_text

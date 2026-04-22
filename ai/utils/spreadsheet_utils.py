@@ -1,6 +1,7 @@
 import os
 import re
 import sqlite3
+from difflib import SequenceMatcher
 from typing import Any
 
 import pandas as pd
@@ -9,6 +10,7 @@ import pandas as pd
 SPREADSHEET_SUFFIXES = (".csv", ".xlsx", ".xls")
 MAX_HEADER_PREVIEW_COLUMNS = 20
 MAX_NUMERIC_COLUMNS_IN_PROMPT = 10
+DEFAULT_MAPPING_CONFIDENCE_THRESHOLD = 0.9
 
 
 def is_spreadsheet_path(file_path: str) -> bool:
@@ -78,6 +80,9 @@ def read_spreadsheet_sheets(file_path: str) -> dict[str, pd.DataFrame]:
 
 def normalize_dataframe(data_frame: pd.DataFrame) -> pd.DataFrame:
     normalized = data_frame.copy()
+    if all(isinstance(column, int) for column in normalized.columns):
+        normalized.columns = [f"column_{index}" for index, _ in enumerate(normalized.columns, start=1)]
+        return normalized
     normalized.columns = [
         _normalize_column_name(column, index)
         for index, column in enumerate(normalized.columns, start=1)
@@ -154,6 +159,10 @@ def upload_spreadsheet_to_sqlite(
     if_exists: str = "append",
     strict_schema: bool = True,
     allow_create_table: bool = False,
+    apply_suggested_mapping: bool = False,
+    type_casts: dict[str, str] | None = None,
+    column_mapping: dict[str, str] | None = None,
+    create_table_column_types: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     sheets = read_spreadsheet_sheets(file_path)
     selected_sheet = sheet_name or next(iter(sheets.keys()))
@@ -168,11 +177,31 @@ def upload_spreadsheet_to_sqlite(
         raise ValueError(f"SQLite table '{table_name}' does not exist")
 
     if table_exists:
+        mapping_applied: dict[str, str] = {}
+        explicit_mapping = _normalize_column_mapping(column_mapping)
+        if explicit_mapping:
+            frame = frame.rename(columns={source: target for target, source in explicit_mapping.items()})
+            mapping_applied.update(explicit_mapping)
+
+        if apply_suggested_mapping:
+            suggested_mapping = suggest_schema_column_mapping(
+                sqlite_db_path=sqlite_db_path,
+                table_name=table_name,
+                spreadsheet_columns=[str(column) for column in frame.columns],
+                min_confidence=DEFAULT_MAPPING_CONFIDENCE_THRESHOLD,
+            )["mapping"]
+            if suggested_mapping:
+                frame = frame.rename(columns={source: target for target, source in suggested_mapping.items()})
+                mapping_applied.update(suggested_mapping)
+
+        normalized_casts = _normalize_type_casts(type_casts)
         verification = verify_spreadsheet_against_sqlite_schema(
             data_frame=frame,
             sqlite_db_path=sqlite_db_path,
             table_name=table_name,
+            type_overrides=normalized_casts,
         )
+        verification["mapping_applied"] = mapping_applied
     else:
         verification = {
             "is_compatible": True,
@@ -181,6 +210,8 @@ def upload_spreadsheet_to_sqlite(
             "missing_columns": [],
             "extra_columns": [],
             "type_issues": [],
+            "mapping_suggestions": [],
+            "mapping_applied": {},
         }
 
     if strict_schema and not verification["is_compatible"]:
@@ -200,8 +231,21 @@ def upload_spreadsheet_to_sqlite(
             raise ValueError("No shared columns between spreadsheet and SQLite table")
         write_frame = frame[shared_columns]
 
+    if type_casts:
+        write_frame = _apply_type_casts(write_frame, _normalize_type_casts(type_casts))
+
     with sqlite3.connect(sqlite_db_path) as connection:
-        write_frame.to_sql(table_name, connection, if_exists=if_exists, index=False)
+        to_sql_kwargs: dict[str, Any] = {
+            "name": table_name,
+            "con": connection,
+            "if_exists": if_exists,
+            "index": False,
+        }
+        if not table_exists and allow_create_table:
+            normalized_create_types = _normalize_type_casts(create_table_column_types)
+            if normalized_create_types:
+                to_sql_kwargs["dtype"] = normalized_create_types
+        write_frame.to_sql(**to_sql_kwargs)
 
     return {
         "table_name": table_name,
@@ -216,20 +260,29 @@ def verify_spreadsheet_against_sqlite_schema(
     data_frame: pd.DataFrame,
     sqlite_db_path: str,
     table_name: str,
+    type_overrides: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     table_columns_info = _get_sqlite_table_columns(sqlite_db_path, table_name)
     table_columns = [column["name"] for column in table_columns_info]
     frame_columns = [str(column) for column in data_frame.columns]
+    normalized_overrides = _normalize_type_casts(type_overrides)
 
     missing_columns = [column for column in table_columns if column not in frame_columns]
     extra_columns = [column for column in frame_columns if column not in table_columns]
+
+    mapping_insight = suggest_schema_column_mapping(
+        sqlite_db_path=sqlite_db_path,
+        table_name=table_name,
+        spreadsheet_columns=frame_columns,
+        min_confidence=DEFAULT_MAPPING_CONFIDENCE_THRESHOLD,
+    )
 
     type_issues = []
     for column in table_columns_info:
         name = column["name"]
         if name not in data_frame.columns:
             continue
-        sqlite_type = (column["type"] or "").upper()
+        sqlite_type = normalized_overrides.get(name, (column["type"] or "").upper())
         column_series = data_frame[name]
         if not _is_series_compatible_with_sqlite_type(column_series, sqlite_type):
             type_issues.append(
@@ -248,7 +301,26 @@ def verify_spreadsheet_against_sqlite_schema(
         "missing_columns": missing_columns,
         "extra_columns": extra_columns,
         "type_issues": type_issues,
+        "mapping_suggestions": mapping_insight["suggestions"],
+        "suggested_mapping": mapping_insight["mapping"],
+        "type_overrides": normalized_overrides,
     }
+
+
+def suggest_schema_column_mapping(
+    sqlite_db_path: str,
+    table_name: str,
+    spreadsheet_columns: list[str],
+    min_confidence: float = DEFAULT_MAPPING_CONFIDENCE_THRESHOLD,
+) -> dict[str, Any]:
+    table_columns = get_sqlite_table_schema(sqlite_db_path, table_name)
+    suggestions = _build_mapping_suggestions(table_columns, spreadsheet_columns)
+    mapping = {
+        item["table_column"]: item["spreadsheet_column"]
+        for item in suggestions
+        if item["table_column"] != item["spreadsheet_column"] and item["confidence"] >= min_confidence
+    }
+    return {"suggestions": suggestions, "mapping": mapping}
 
 
 def list_sqlite_tables(sqlite_db_path: str) -> list[str]:
@@ -372,3 +444,132 @@ def format_analysis(analysis: dict[str, Any]) -> str:
                 lines.append(f"      - ... {omitted} more numeric columns omitted")
 
     return "\n".join(lines)
+
+
+def _build_mapping_suggestions(
+    table_columns: list[str], spreadsheet_columns: list[str]
+) -> list[dict[str, Any]]:
+    suggestions: list[dict[str, Any]] = []
+    remaining_sheet = list(spreadsheet_columns)
+
+    for table_column in table_columns:
+        if table_column in remaining_sheet:
+            remaining_sheet.remove(table_column)
+            continue
+
+        norm_table = _canonicalize_schema_name(table_column)
+        best_sheet = None
+        best_score = 0.0
+
+        for sheet_column in remaining_sheet:
+            norm_sheet = _canonicalize_schema_name(sheet_column)
+            if norm_table == norm_sheet:
+                best_sheet = sheet_column
+                best_score = 1.0
+                break
+
+            score = SequenceMatcher(a=norm_table, b=norm_sheet).ratio()
+            if score > best_score:
+                best_sheet = sheet_column
+                best_score = score
+
+        if best_sheet and best_score >= 0.75:
+            suggestions.append(
+                {
+                    "table_column": table_column,
+                    "spreadsheet_column": best_sheet,
+                    "confidence": round(float(best_score), 3),
+                    "reason": "normalized names match" if best_score == 1.0 else "fuzzy name similarity",
+                }
+            )
+            remaining_sheet.remove(best_sheet)
+
+    return suggestions
+
+
+def _canonicalize_schema_name(name: str) -> str:
+    text = (name or "").strip().lower()
+    text = re.sub(r"[^a-z0-9]+", "_", text)
+    text = re.sub(r"_+", "_", text)
+    return text.strip("_")
+
+
+def _normalize_type_casts(type_casts: dict[str, str] | None) -> dict[str, str]:
+    if not type_casts:
+        return {}
+
+    normalized: dict[str, str] = {}
+    for column, raw_type in type_casts.items():
+        if not column or not raw_type:
+            continue
+        kind = _canonical_cast_type(raw_type)
+        if kind:
+            normalized[str(column)] = kind
+    return normalized
+
+
+def _normalize_column_mapping(column_mapping: dict[str, str] | None) -> dict[str, str]:
+    if not column_mapping:
+        return {}
+
+    normalized: dict[str, str] = {}
+    for target_column, source_column in column_mapping.items():
+        target = (target_column or "").strip()
+        source = (source_column or "").strip()
+        if target and source:
+            normalized[target] = source
+    return normalized
+
+
+def _canonical_cast_type(raw_type: str) -> str | None:
+    lowered = (raw_type or "").strip().lower()
+    if lowered in {"text", "string", "str"}:
+        return "TEXT"
+    if lowered in {"integer", "int"}:
+        return "INTEGER"
+    if lowered in {"real", "float", "double", "numeric", "number"}:
+        return "REAL"
+    if lowered in {"date", "datetime", "timestamp", "time"}:
+        return "DATE"
+    if lowered in {"bool", "boolean"}:
+        return "BOOLEAN"
+    return None
+
+
+def _apply_type_casts(data_frame: pd.DataFrame, type_casts: dict[str, str]) -> pd.DataFrame:
+    if not type_casts:
+        return data_frame
+
+    casted = data_frame.copy()
+    for column, cast_type in type_casts.items():
+        if column not in casted.columns:
+            continue
+
+        series = casted[column]
+        if cast_type == "TEXT":
+            casted[column] = series.where(series.isna(), series.astype(str))
+        elif cast_type == "INTEGER":
+            numeric = _series_to_numeric(series)
+            casted[column] = numeric.round().astype("Int64")
+        elif cast_type == "REAL":
+            casted[column] = _series_to_numeric(series)
+        elif cast_type == "DATE":
+            casted[column] = pd.to_datetime(series, errors="coerce")
+        elif cast_type == "BOOLEAN":
+            casted[column] = _series_to_boolean(series)
+
+    return casted
+
+
+def _series_to_boolean(series: pd.Series) -> pd.Series:
+    def parse_boolean(value: Any) -> Any:
+        if pd.isna(value):
+            return pd.NA
+        lowered = str(value).strip().lower()
+        if lowered in {"1", "true", "t", "yes", "y"}:
+            return True
+        if lowered in {"0", "false", "f", "no", "n"}:
+            return False
+        return pd.NA
+
+    return series.apply(parse_boolean).astype("boolean")

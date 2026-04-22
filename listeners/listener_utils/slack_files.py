@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 
 _SUPPORTED_IMAGE_ENCODINGS = {"jpeg", "png", "gif", "webp"}
 _SUPPORTED_IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp", ".gif")
+_SUPPORTED_SPREADSHEET_SUFFIXES = (".xlsx", ".xls", ".csv")
 
 
 def _is_supported_file(file_info: dict) -> bool:
@@ -42,6 +43,20 @@ def _looks_like_image_url(value: str) -> bool:
 
 def _looks_like_image_path(value: str) -> bool:
     return (value or "").lower().endswith(_SUPPORTED_IMAGE_SUFFIXES)
+
+
+def _looks_like_spreadsheet_url(value: str) -> bool:
+    lowered = (value or "").lower()
+    if not lowered.startswith(("http://", "https://")):
+        return False
+
+    parsed = urlparse(lowered)
+    path = parsed.path or ""
+    return path.endswith(_SUPPORTED_SPREADSHEET_SUFFIXES)
+
+
+def _looks_like_spreadsheet_path(value: str) -> bool:
+    return (value or "").lower().endswith(_SUPPORTED_SPREADSHEET_SUFFIXES)
 
 
 def _extract_markdown_image_targets(text: str) -> list[str]:
@@ -102,6 +117,49 @@ def extract_response_image_targets(response_text: str) -> tuple[list[str], list[
             continue
 
         if _looks_like_image_path(normalized):
+            local_paths.append(normalized)
+
+    return local_paths, remote_urls
+
+
+def extract_response_spreadsheet_targets(response_text: str) -> tuple[list[str], list[str]]:
+    local_paths = []
+    remote_urls = []
+    seen = set()
+
+    candidates = []
+
+    inline_code_candidates = re.findall(r"`([^`]+)`", response_text or "")
+    candidates.extend([candidate.strip() for candidate in inline_code_candidates])
+
+    url_candidates = re.findall(r"https?://[^\s)\]>\"']+", response_text or "")
+    candidates.extend([candidate.strip().rstrip(".,;:!") for candidate in url_candidates])
+
+    abs_path_candidates = re.findall(
+        r"(?<!\w)(/[A-Za-z0-9_./\-]+\.(?:csv|xlsx|xls))(?!\w)",
+        response_text or "",
+        flags=re.IGNORECASE,
+    )
+    candidates.extend([candidate.strip() for candidate in abs_path_candidates])
+
+    relative_path_candidates = re.findall(
+        r"(?<!://)(?<![A-Za-z0-9_./\-])((?:~?/)?(?:[A-Za-z0-9_.\-]+/)+[A-Za-z0-9_.\-]+\.(?:csv|xlsx|xls))(?![A-Za-z0-9_./\-])",
+        response_text or "",
+        flags=re.IGNORECASE,
+    )
+    candidates.extend([candidate.strip() for candidate in relative_path_candidates])
+
+    for candidate in candidates:
+        normalized = candidate.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+
+        if _looks_like_spreadsheet_url(normalized):
+            remote_urls.append(normalized)
+            continue
+
+        if _looks_like_spreadsheet_path(normalized):
             local_paths.append(normalized)
 
     return local_paths, remote_urls
@@ -237,6 +295,90 @@ def upload_images_from_response(
                 )
             else:
                 warnings.append(f"Could not upload image URL `{url}` to Slack.")
+
+    return uploaded_names, warnings, temp_paths
+
+
+def upload_spreadsheets_from_response(
+    client,
+    channel: str,
+    thread_ts: str,
+    response_text: str,
+) -> tuple[list[str], list[str], list[str]]:
+    local_targets, remote_targets = extract_response_spreadsheet_targets(response_text)
+    if not local_targets and not remote_targets:
+        return [], [], []
+
+    uploaded_names = []
+    warnings = []
+    temp_paths = []
+    uploaded_keys = set()
+
+    for local_target in local_targets:
+        spreadsheet_path = _normalize_local_path(local_target)
+        path_key = str(spreadsheet_path.resolve()) if spreadsheet_path.exists() else str(spreadsheet_path)
+        if path_key in uploaded_keys:
+            continue
+
+        if not spreadsheet_path.exists() or not spreadsheet_path.is_file():
+            warnings.append(f"Skipped file `{local_target}`: local file not found.")
+            continue
+
+        try:
+            client.files_upload_v2(
+                channel=channel,
+                thread_ts=thread_ts,
+                file=str(spreadsheet_path),
+                title=spreadsheet_path.name,
+            )
+            uploaded_names.append(spreadsheet_path.name)
+            uploaded_keys.add(path_key)
+        except Exception as error:
+            error_code = _get_slack_error_code(error)
+            if error_code == "missing_scope":
+                warnings.append(
+                    "Could not upload generated spreadsheet(s): missing Slack scope `files:write`."
+                )
+            else:
+                warnings.append(f"Could not upload file `{local_target}` to Slack.")
+
+    for url in remote_targets:
+        if url in uploaded_keys:
+            continue
+
+        try:
+            request = urllib.request.Request(url)
+            with urllib.request.urlopen(request, timeout=30) as response:
+                payload = response.read()
+        except Exception:
+            warnings.append(f"Could not download file URL `{url}`.")
+            continue
+
+        parsed = urlparse(url)
+        source_name = Path(parsed.path).name or "generated-report.csv"
+        suffix = Path(source_name).suffix or ".csv"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+            temp_file.write(payload)
+            temp_path = temp_file.name
+            temp_paths.append(temp_path)
+
+        try:
+            client.files_upload_v2(
+                channel=channel,
+                thread_ts=thread_ts,
+                file=temp_path,
+                title=source_name,
+            )
+            uploaded_names.append(source_name)
+            uploaded_keys.add(url)
+        except Exception as error:
+            error_code = _get_slack_error_code(error)
+            if error_code == "missing_scope":
+                warnings.append(
+                    "Could not upload generated spreadsheet(s): missing Slack scope `files:write`."
+                )
+            else:
+                warnings.append(f"Could not upload file URL `{url}` to Slack.")
 
     return uploaded_names, warnings, temp_paths
 
