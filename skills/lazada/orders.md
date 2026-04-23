@@ -25,6 +25,8 @@ Fetch Lazada order-level data accurately for operational tracking and sales repo
 - Prefer the local helper command over raw hand-written curl:
   - `python3 -m lazada_helper.cli orders get --days 7 --status all --limit 100 --max-pages 10`
 - Helper reads shared env config (`BOLTY_LAZADA_*`), computes signature internally, and returns JSON.
+- Datetime filter inputs (`created_*`, `update_*`) must use `YYYY-MM-DD`.
+- `YYYY-MM-DD` uses Malaysia timezone (`+08:00`): `*_after` maps to `00:00:00`, `*_before` maps to `23:59:59.999`.
 
 ## Recommended Defaults
 - `sort_by=updated_at`

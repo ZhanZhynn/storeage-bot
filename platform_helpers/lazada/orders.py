@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
@@ -17,8 +18,107 @@ def build_default_order_window(days: int) -> tuple[str, str]:
 
 
 def get_order_items(client: LazadaClient, **kwargs: Any) -> dict[str, Any]:
-    # Delegate to the existing fetch_orders function
+    # Legacy helper used by reviews flow.
     return fetch_orders(client, **kwargs)
+
+
+def get_order(client: LazadaClient, *, order_id: str) -> dict[str, Any]:
+    payload = client.get("/order/get", {"order_id": order_id})
+    request_id = payload.get("request_id")
+    data = payload.get("data")
+
+    order: dict[str, Any] = {}
+    if isinstance(data, dict):
+        order = data
+
+    return {
+        "endpoint": "/order/get",
+        "request_ids": [str(request_id)] if request_id else [],
+        "order": order,
+    }
+
+
+def get_order_items_by_order_id(client: LazadaClient, *, order_id: str) -> dict[str, Any]:
+    payload = client.get("/order/items/get", {"order_id": order_id})
+    request_id = payload.get("request_id")
+    data = payload.get("data")
+
+    items: list[dict[str, Any]] = []
+    if isinstance(data, list):
+        items = [item for item in data if isinstance(item, dict)]
+
+    return {
+        "endpoint": "/order/items/get",
+        "request_ids": [str(request_id)] if request_id else [],
+        "order_id": str(order_id),
+        "total_fetched": len(items),
+        "order_items": items,
+    }
+
+
+def get_multiple_order_items(client: LazadaClient, *, order_ids: list[str] | list[int]) -> dict[str, Any]:
+    if not order_ids:
+        raise ValueError("order_ids must not be empty")
+
+    normalized_order_ids = [str(order_id).strip() for order_id in order_ids if str(order_id).strip()]
+    if not normalized_order_ids:
+        raise ValueError("order_ids must contain at least one valid order id")
+
+    payload = client.get("/orders/items/get", {"order_ids": json.dumps(normalized_order_ids)})
+    request_id = payload.get("request_id")
+    data = payload.get("data")
+
+    orders: list[dict[str, Any]] = []
+    if isinstance(data, list):
+        orders = [item for item in data if isinstance(item, dict)]
+
+    total_items = 0
+    for order in orders:
+        maybe_items = order.get("order_items")
+        if isinstance(maybe_items, list):
+            total_items += len([item for item in maybe_items if isinstance(item, dict)])
+
+    return {
+        "endpoint": "/orders/items/get",
+        "request_ids": [str(request_id)] if request_id else [],
+        "order_ids": normalized_order_ids,
+        "orders_count": len(orders),
+        "total_items": total_items,
+        "orders": orders,
+    }
+
+
+def validate_order_cancel(
+    client: LazadaClient,
+    *,
+    order_id: str,
+    order_item_id_list: list[str] | list[int] | None = None,
+) -> dict[str, Any]:
+    params: dict[str, Any] = {"order_id": order_id}
+    normalized_item_ids: list[str] = []
+    if order_item_id_list is not None:
+        normalized_item_ids = [
+            str(order_item_id).strip()
+            for order_item_id in order_item_id_list
+            if str(order_item_id).strip()
+        ]
+    params["order_item_id_list"] = json.dumps(normalized_item_ids)
+
+    payload = client.get("/order/reverse/cancel/validate", params)
+    request_id = payload.get("request_id")
+    data = payload.get("data")
+
+    validation: dict[str, Any] = {}
+    if isinstance(data, dict):
+        validation = data
+
+    return {
+        "endpoint": "/order/reverse/cancel/validate",
+        "request_ids": [str(request_id)] if request_id else [],
+        "order_id": str(order_id),
+        "order_item_id_list": normalized_item_ids,
+        "validation": validation,
+    }
 
 
 def fetch_orders(

@@ -11,9 +11,13 @@ Retrieve Lazada catalog/product information for SKU-level checks, listing health
 
 ## Deterministic Helper Commands (Preferred)
 - Product list:
-  - `python3 -m lazada_helper.cli products get --filter all --limit 100 --offset 0 --max-pages 10`
+  - `python3 -m lazada_helper.cli products get --filter all --update-after 2026-04-01 --update-before 2026-04-21 --limit 100 --offset 0 --max-pages 10`
 - Product item detail:
   - `python3 -m lazada_helper.cli products item-get --item-id <ITEM_ID>`
+
+## Datetime Input Rules
+- `create_after`, `create_before`, `update_after`, and `update_before` must use `YYYY-MM-DD`.
+- Date-only values use Malaysia timezone (`+08:00`), where `*_after` is start of day and `*_before` is end of day (`23:59:59.999`).
 
 ## Endpoint Mapping
 - `products get` -> `/products/get`

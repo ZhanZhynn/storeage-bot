@@ -14,13 +14,17 @@ Track return/refund cases and quantify impact on order outcomes and cash flow.
 
 ## Deterministic Helper Commands (Preferred)
 - Return detail list:
-  - `python3 -m lazada_helper.cli returns-refunds return-detail-list --created-after <ISO8601> --created-before <ISO8601> --limit 100 --offset 0 --max-pages 10`
+  - `python3 -m lazada_helper.cli returns-refunds return-detail-list --created-after 2026-04-01 --created-before 2026-04-21 --limit 100 --offset 0 --max-pages 10`
 - Return history list:
-  - `python3 -m lazada_helper.cli returns-refunds return-history-list --created-after <ISO8601> --created-before <ISO8601> --limit 100 --offset 0 --max-pages 10`
+  - `python3 -m lazada_helper.cli returns-refunds return-history-list --created-after 2026-04-01 --created-before 2026-04-21 --limit 100 --offset 0 --max-pages 10`
 - Return reason list:
   - `python3 -m lazada_helper.cli returns-refunds reason-list`
 - Reverse orders for seller:
-  - `python3 -m lazada_helper.cli returns-refunds get-reverse-orders-for-seller --created-after <ISO8601> --created-before <ISO8601> --limit 100 --offset 0 --max-pages 10`
+  - `python3 -m lazada_helper.cli returns-refunds get-reverse-orders-for-seller --created-after 2026-04-01 --created-before 2026-04-21 --limit 100 --offset 0 --max-pages 10`
+
+## Datetime Input Rules
+- `created_after` and `created_before` must use `YYYY-MM-DD`.
+- Date-only values are interpreted in Malaysia timezone (`+08:00`) with end-of-day handling for `*_before` (`23:59:59.999`).
 
 ## Endpoint Mapping
 - `returns-refunds return-detail-list` -> `/order/reverse/return/detail/list`

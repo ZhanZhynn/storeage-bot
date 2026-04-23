@@ -12,7 +12,7 @@ Retrieve seller review streams for quality monitoring, sentiment checks, and res
 
 ## Deterministic Helper Commands (Preferred)
 - Seller review history list:
-  - `python3 -m lazada_helper.cli reviews seller-history-list --created-after <ISO8601> --created-before <ISO8601> --item-id <ITEM_ID> --current 1 --limit 100 --max-pages 10`
+  - `python3 -m lazada_helper.cli reviews seller-history-list --created-after 2026-04-01 --created-before 2026-04-21 --item-id <ITEM_ID> --current 1 --limit 100 --max-pages 10`
 - Seller review list v2:
   - `python3 -m lazada_helper.cli reviews seller-list-v2 --item-id <ITEM_ID> [--id-list <REVIEW_ID_LIST>]`
 - Reviews from recent delivered orders:
@@ -30,3 +30,5 @@ Retrieve seller review streams for quality monitoring, sentiment checks, and res
 
 ## Execution Notes
 - Execute helper commands via `python3 -m lazada_helper.safe_run -- ...` and parse JSON from stdout.
+- For `seller-history-list`, `created_after` and `created_before` must use `YYYY-MM-DD`.
+- `YYYY-MM-DD` uses Malaysia timezone (`+08:00`), where `created_after` is start of day and `created_before` is end of day (`23:59:59.999`).

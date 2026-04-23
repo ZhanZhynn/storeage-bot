@@ -26,21 +26,26 @@ Provide a repeatable workflow for fetching Lazada seller data using the local Go
 - For API execution, prefer deterministic helper commands over raw ad-hoc curl.
 - Orders example:
   - `python3 -m lazada_helper.cli orders get --days 7 --status all --limit 100 --max-pages 10`
+- Date filter format for `created_*`, `update_*`, and `create_*`:
+  - Use `YYYY-MM-DD` only.
+  - Helper normalizes `YYYY-MM-DD` to endpoint-specific Lazada API formats.
+  - `YYYY-MM-DD` is interpreted in Malaysia timezone (`+08:00`).
+  - For date-only input: `*_after` uses `00:00:00`, `*_before` uses `23:59:59.999`.
 - Finance examples:
-  - `python3 -m lazada_helper.cli finance payout-status-get --created-after <ISO8601> --created-before <ISO8601> --limit 100 --offset 0 --max-pages 10`
-  - `python3 -m lazada_helper.cli finance account-transactions-query --created-after <ISO8601> --created-before <ISO8601> --limit 100 --offset 0 --max-pages 10`
-  - `python3 -m lazada_helper.cli finance logistics-fee-detail --created-after <ISO8601> --created-before <ISO8601> --limit 100 --offset 0 --max-pages 3`
-  - `python3 -m lazada_helper.cli finance transaction-details-get --transaction-number <TRANSACTION_NUMBER>`
+  - `python3 -m lazada_helper.cli finance payout-status-get --created-after 2026-04-01 --created-before 2026-04-21 --limit 100 --offset 0 --max-pages 10`
+  - `python3 -m lazada_helper.cli finance account-transactions-query --transaction-type Deposit --sub-transaction-type Deposit --transaction-number 1001 --start-time 2022-06-01 --end-time 2022-06-02 --page-num 1 --page-size 10 --max-pages 10`
+  - `python3 -m lazada_helper.cli finance logistics-fee-detail --seller-id 1002 --request-type OPEN_API --trade-order-id 9432987348 --trade-order-line-id 9432997348 --fee-type COD --biz-flow-type LAZADA --bill-start-time 2022-01-13 --bill-end-time 2022-01-13 --page-no 1 --page-size 10 --total-records 1000 --max-pages 3`
+  - `python3 -m lazada_helper.cli finance transaction-details-get --trade-order-id 123123213213 --trade-order-line-id 45645674566 --trans-type -1 --start-time 2021-01-01 --end-time 2021-01-05 --offset 0 --limit 100`
 - Product examples:
   - `python3 -m lazada_helper.cli products get --filter all --limit 50 --offset 0 --max-pages 5`
   - `python3 -m lazada_helper.cli products item-get --item-id <ITEM_ID>`
 - Returns/refunds examples:
-  - `python3 -m lazada_helper.cli returns-refunds return-detail-list --created-after <ISO8601> --created-before <ISO8601> --limit 100 --offset 0 --max-pages 10`
-  - `python3 -m lazada_helper.cli returns-refunds return-history-list --created-after <ISO8601> --created-before <ISO8601> --limit 100 --offset 0 --max-pages 10`
+  - `python3 -m lazada_helper.cli returns-refunds return-detail-list --created-after 2026-04-01 --created-before 2026-04-21 --limit 100 --offset 0 --max-pages 10`
+  - `python3 -m lazada_helper.cli returns-refunds return-history-list --created-after 2026-04-01 --created-before 2026-04-21 --limit 100 --offset 0 --max-pages 10`
   - `python3 -m lazada_helper.cli returns-refunds reason-list`
-  - `python3 -m lazada_helper.cli returns-refunds get-reverse-orders-for-seller --created-after <ISO8601> --created-before <ISO8601> --limit 100 --offset 0 --max-pages 10`
+  - `python3 -m lazada_helper.cli returns-refunds get-reverse-orders-for-seller --created-after 2026-04-01 --created-before 2026-04-21 --limit 100 --offset 0 --max-pages 10`
 - Reviews examples:
-  - `python3 -m lazada_helper.cli reviews seller-history-list --created-after 1774972800 --created-before 1776614400 --current 1 --limit 100 --max-pages 10`
+  - `python3 -m lazada_helper.cli reviews seller-history-list --created-after 2026-04-01 --created-before 2026-04-21 --item-id <ITEM_ID> --current 1 --limit 100 --max-pages 10`
   - `python3 -m lazada_helper.cli reviews seller-list-v2 --item-id <ITEM_ID> [--id-list <REVIEW_ID_LIST>]`
   - `python3 -m lazada_helper.cli reviews seller-reply-add --id-list <REVIEW_ID_LIST> --content <REPLY_TEXT>`
 

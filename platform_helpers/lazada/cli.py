@@ -1,7 +1,7 @@
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, time, timedelta, timezone
 from typing import Any
 
 from .client import (LazadaAPIError, LazadaClient, LazadaConfig,
@@ -16,6 +16,88 @@ from .returns_refunds import (get_reverse_orders_for_seller,
 from .reviews import (add_seller_review_reply, list_seller_reviews_history,
                       list_seller_reviews_v2)
 
+_MALAYSIA_TZ = timezone(timedelta(hours=8))
+_DATETIME_FILTER_FIELDS = (
+    "created_after",
+    "created_before",
+    "update_after",
+    "update_before",
+    "create_after",
+    "create_before",
+)
+_DATETIME_FILTER_HELP = (
+    "Use YYYY-MM-DD. Helper normalizes to Lazada API datetime format in Malaysia timezone (+08:00)."
+)
+_DATE_ONLY_HELP = "Use YYYY-MM-DD. Helper normalizes to the endpoint's required Lazada format."
+
+
+def _parse_to_malaysia_date(value: str | None, *, field_name: str) -> datetime.date:
+    if value is None:
+        raise ValueError(f"{field_name} is required")
+
+    text = str(value).strip()
+    if not text:
+        raise ValueError(f"{field_name} is required")
+
+    if len(text) == 10 and "T" not in text:
+        try:
+            return datetime.strptime(text, "%Y-%m-%d").date()
+        except ValueError as err:
+            raise ValueError(f"{field_name} must use YYYY-MM-DD") from err
+
+    raise ValueError(f"{field_name} must use YYYY-MM-DD")
+
+
+def _normalize_date_for_api(value: str | None, *, field_name: str) -> str:
+    return _parse_to_malaysia_date(value, field_name=field_name).isoformat()
+
+
+def _normalize_compact_date_for_api(value: str | None, *, field_name: str) -> str:
+    parsed = _parse_to_malaysia_date(value, field_name=field_name)
+    return parsed.strftime("%Y%m%d")
+
+
+def _normalize_bill_date_for_api(value: str | None, *, field_name: str, is_end: bool) -> str:
+    parsed = _parse_to_malaysia_date(value, field_name=field_name)
+    if is_end:
+        dt = datetime.combine(parsed, time(23, 59, 59, 999000), _MALAYSIA_TZ)
+    else:
+        dt = datetime.combine(parsed, time(0, 0, 0), _MALAYSIA_TZ)
+    return str(int(dt.timestamp() * 1000))
+
+
+def _normalize_datetime_filter(value: str | None, *, is_before: bool) -> str | None:
+    if value is None:
+        return None
+
+    text = str(value).strip()
+    if not text:
+        return None
+
+    try:
+        date_value = datetime.strptime(text, "%Y-%m-%d").date()
+    except ValueError as err:
+        raise ValueError("date filters must use YYYY-MM-DD") from err
+
+    if is_before:
+        dt = datetime.combine(date_value, time(23, 59, 59, 999000), _MALAYSIA_TZ)
+        return dt.isoformat(timespec="milliseconds")
+
+    dt = datetime.combine(date_value, time(0, 0, 0), _MALAYSIA_TZ)
+    return dt.isoformat(timespec="seconds")
+
+
+def _normalize_datetime_filters(args: argparse.Namespace) -> None:
+    skip_created_filters = args.domain == "finance" and args.action == "payout-status-get"
+    for field in _DATETIME_FILTER_FIELDS:
+        if skip_created_filters and field in ("created_after", "created_before"):
+            continue
+        if not hasattr(args, field):
+            continue
+        value = getattr(args, field)
+        normalized = _normalize_datetime_filter(value, is_before=field.endswith("_before"))
+        setattr(args, field, normalized)
+
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Deterministic Lazada API helper")
@@ -25,10 +107,18 @@ def _build_parser() -> argparse.ArgumentParser:
     orders_subparsers = orders.add_subparsers(dest="action", required=True)
 
     orders_get = orders_subparsers.add_parser("get", help="Fetch orders via /orders/get")
-    orders_get.add_argument("--created-after", dest="created_after", default=None)
-    orders_get.add_argument("--created-before", dest="created_before", default=None)
-    orders_get.add_argument("--update-after", dest="update_after", default=None)
-    orders_get.add_argument("--update-before", dest="update_before", default=None)
+    orders_get.add_argument(
+        "--created-after", dest="created_after", default=None, help=_DATETIME_FILTER_HELP
+    )
+    orders_get.add_argument(
+        "--created-before", dest="created_before", default=None, help=_DATETIME_FILTER_HELP
+    )
+    orders_get.add_argument(
+        "--update-after", dest="update_after", default=None, help=_DATETIME_FILTER_HELP
+    )
+    orders_get.add_argument(
+        "--update-before", dest="update_before", default=None, help=_DATETIME_FILTER_HELP
+    )
     orders_get.add_argument("--days", type=int, default=30)
     orders_get.add_argument("--status", default="all")
     orders_get.add_argument("--limit", type=int, default=100)
@@ -43,8 +133,8 @@ def _build_parser() -> argparse.ArgumentParser:
     payout_status_cmd = finance_subparsers.add_parser(
         "payout-status-get", help="Fetch payout status via /finance/payout/status/get"
     )
-    payout_status_cmd.add_argument("--created-after", required=True)
-    payout_status_cmd.add_argument("--created-before", required=True)
+    payout_status_cmd.add_argument("--created-after", required=True, help=_DATETIME_FILTER_HELP)
+    payout_status_cmd.add_argument("--created-before", required=True, help=_DATETIME_FILTER_HELP)
     payout_status_cmd.add_argument("--limit", type=int, default=100)
     payout_status_cmd.add_argument("--offset", type=int, default=0)
     payout_status_cmd.add_argument("--max-pages", dest="max_pages", type=int, default=10)
@@ -53,37 +143,61 @@ def _build_parser() -> argparse.ArgumentParser:
         "account-transactions-query",
         help="Query account transactions via /finance/transaction/accountTransactions/query",
     )
-    account_tx_cmd.add_argument("--created-after", required=True)
-    account_tx_cmd.add_argument("--created-before", required=True)
-    account_tx_cmd.add_argument("--limit", type=int, default=100)
-    account_tx_cmd.add_argument("--offset", type=int, default=0)
+    account_tx_cmd.add_argument("--transaction-type", default=None)
+    account_tx_cmd.add_argument("--sub-transaction-type", default=None)
+    account_tx_cmd.add_argument("--transaction-number", default=None)
+    account_tx_cmd.add_argument("--start-time", required=True, help=_DATE_ONLY_HELP)
+    account_tx_cmd.add_argument("--end-time", required=True, help=_DATE_ONLY_HELP)
+    account_tx_cmd.add_argument("--page-num", type=int, default=1)
+    account_tx_cmd.add_argument("--page-size", type=int, default=10)
     account_tx_cmd.add_argument("--max-pages", dest="max_pages", type=int, default=10)
 
     logistics_fee_cmd = finance_subparsers.add_parser(
         "logistics-fee-detail",
         help="Query logistics fee detail via /lbs/slb/queryLogisticsFeeDetail",
     )
-    logistics_fee_cmd.add_argument("--created-after", required=True)
-    logistics_fee_cmd.add_argument("--created-before", required=True)
-    logistics_fee_cmd.add_argument("--limit", type=int, default=100)
-    logistics_fee_cmd.add_argument("--offset", type=int, default=0)
+    logistics_fee_cmd.add_argument("--seller-id", default=None)
+    logistics_fee_cmd.add_argument("--request-type", default=None)
+    logistics_fee_cmd.add_argument("--trade-order-id", default=None)
+    logistics_fee_cmd.add_argument("--trade-order-line-id", default=None)
+    logistics_fee_cmd.add_argument("--fee-type", default=None)
+    logistics_fee_cmd.add_argument("--biz-flow-type", default=None)
+    logistics_fee_cmd.add_argument("--bill-start-time", required=True, help=_DATE_ONLY_HELP)
+    logistics_fee_cmd.add_argument("--bill-end-time", required=True, help=_DATE_ONLY_HELP)
+    logistics_fee_cmd.add_argument("--page-no", type=int, default=1)
+    logistics_fee_cmd.add_argument("--page-size", type=int, default=10)
+    logistics_fee_cmd.add_argument("--total-records", type=int, default=None)
     logistics_fee_cmd.add_argument("--max-pages", dest="max_pages", type=int, default=10)
 
     tx_details_cmd = finance_subparsers.add_parser(
         "transaction-details-get",
         help="Get transaction details via /finance/transaction/details/get",
     )
-    tx_details_cmd.add_argument("--transaction-number", required=True)
+    tx_details_cmd.add_argument("--trade-order-id", default=None)
+    tx_details_cmd.add_argument("--trade-order-line-id", default=None)
+    tx_details_cmd.add_argument("--trans-type", default=None)
+    tx_details_cmd.add_argument("--start-time", required=True, help=_DATE_ONLY_HELP)
+    tx_details_cmd.add_argument("--end-time", required=True, help=_DATE_ONLY_HELP)
+    tx_details_cmd.add_argument("--offset", type=int, default=0)
+    tx_details_cmd.add_argument("--limit", type=int, default=100)
 
     products = subparsers.add_parser("products", help="Product domain operations")
     products_subparsers = products.add_subparsers(dest="action", required=True)
 
     products_get_cmd = products_subparsers.add_parser("get", help="Fetch products via /products/get")
     products_get_cmd.add_argument("--filter", dest="filter_expr", default="all")
-    products_get_cmd.add_argument("--create-before", dest="create_before", default=None)
-    products_get_cmd.add_argument("--create-after", dest="create_after", default=None)
-    products_get_cmd.add_argument("--update-before", dest="update_before", default=None)
-    products_get_cmd.add_argument("--update-after", dest="update_after", default=None)
+    products_get_cmd.add_argument(
+        "--create-before", dest="create_before", default=None, help=_DATETIME_FILTER_HELP
+    )
+    products_get_cmd.add_argument(
+        "--create-after", dest="create_after", default=None, help=_DATETIME_FILTER_HELP
+    )
+    products_get_cmd.add_argument(
+        "--update-before", dest="update_before", default=None, help=_DATETIME_FILTER_HELP
+    )
+    products_get_cmd.add_argument(
+        "--update-after", dest="update_after", default=None, help=_DATETIME_FILTER_HELP
+    )
     products_get_cmd.add_argument("--offset", type=int, default=0)
     products_get_cmd.add_argument("--limit", type=int, default=100)
     products_get_cmd.add_argument("--options", default="1")
@@ -102,8 +216,8 @@ def _build_parser() -> argparse.ArgumentParser:
     rr_detail_cmd = rr_subparsers.add_parser(
         "return-detail-list", help="List return details via /order/reverse/return/detail/list"
     )
-    rr_detail_cmd.add_argument("--created-after", required=True)
-    rr_detail_cmd.add_argument("--created-before", required=True)
+    rr_detail_cmd.add_argument("--created-after", required=True, help=_DATETIME_FILTER_HELP)
+    rr_detail_cmd.add_argument("--created-before", required=True, help=_DATETIME_FILTER_HELP)
     rr_detail_cmd.add_argument("--offset", type=int, default=0)
     rr_detail_cmd.add_argument("--limit", type=int, default=100)
     rr_detail_cmd.add_argument("--max-pages", dest="max_pages", type=int, default=10)
@@ -111,8 +225,8 @@ def _build_parser() -> argparse.ArgumentParser:
     rr_history_cmd = rr_subparsers.add_parser(
         "return-history-list", help="List return history via /order/reverse/return/history/list"
     )
-    rr_history_cmd.add_argument("--created-after", required=True)
-    rr_history_cmd.add_argument("--created-before", required=True)
+    rr_history_cmd.add_argument("--created-after", required=True, help=_DATETIME_FILTER_HELP)
+    rr_history_cmd.add_argument("--created-before", required=True, help=_DATETIME_FILTER_HELP)
     rr_history_cmd.add_argument("--offset", type=int, default=0)
     rr_history_cmd.add_argument("--limit", type=int, default=100)
     rr_history_cmd.add_argument("--max-pages", dest="max_pages", type=int, default=10)
@@ -125,8 +239,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "get-reverse-orders-for-seller",
         help="Fetch reverse orders via /reverse/getreverseordersforseller",
     )
-    rr_reverse_orders_cmd.add_argument("--created-after", required=True)
-    rr_reverse_orders_cmd.add_argument("--created-before", required=True)
+    rr_reverse_orders_cmd.add_argument("--created-after", required=True, help=_DATETIME_FILTER_HELP)
+    rr_reverse_orders_cmd.add_argument("--created-before", required=True, help=_DATETIME_FILTER_HELP)
     rr_reverse_orders_cmd.add_argument("--offset", type=int, default=0)
     rr_reverse_orders_cmd.add_argument("--limit", type=int, default=100)
     rr_reverse_orders_cmd.add_argument("--max-pages", dest="max_pages", type=int, default=10)
@@ -137,8 +251,8 @@ def _build_parser() -> argparse.ArgumentParser:
     review_history_cmd = reviews_subparsers.add_parser(
         "seller-history-list", help="List seller review history via /review/seller/history/list"
     )
-    review_history_cmd.add_argument("--created-after", required=True)
-    review_history_cmd.add_argument("--created-before", required=True)
+    review_history_cmd.add_argument("--created-after", required=True, help=_DATETIME_FILTER_HELP)
+    review_history_cmd.add_argument("--created-before", required=True, help=_DATETIME_FILTER_HELP)
     review_history_cmd.add_argument("--item-id", default=None)
     review_history_cmd.add_argument("--current", type=int, default=1)
     review_history_cmd.add_argument("--limit", type=int, default=100)
@@ -276,10 +390,12 @@ def _handle_orders_get(args: argparse.Namespace) -> int:
 
 
 def _handle_finance_payout_status_get(args: argparse.Namespace) -> int:
+    created_after = _normalize_date_for_api(args.created_after, field_name="created_after")
+    created_before = _normalize_date_for_api(args.created_before, field_name="created_before")
     result = get_payout_status(
         _with_client(),
-        created_after=args.created_after,
-        created_before=args.created_before,
+        created_after=created_after,
+        created_before=created_before,
         limit=args.limit,
         offset=args.offset,
         max_pages=args.max_pages,
@@ -289,8 +405,8 @@ def _handle_finance_payout_status_get(args: argparse.Namespace) -> int:
             "domain": "finance",
             "action": "payout-status-get",
             "filters": {
-                "created_after": args.created_after,
-                "created_before": args.created_before,
+                "created_after": created_after,
+                "created_before": created_before,
                 "limit": args.limit,
                 "offset": args.offset,
                 "max_pages": args.max_pages,
@@ -302,12 +418,17 @@ def _handle_finance_payout_status_get(args: argparse.Namespace) -> int:
 
 
 def _handle_finance_account_transactions_query(args: argparse.Namespace) -> int:
+    start_time = _normalize_compact_date_for_api(args.start_time, field_name="start_time")
+    end_time = _normalize_compact_date_for_api(args.end_time, field_name="end_time")
     result = query_account_transactions(
         _with_client(),
-        created_after=args.created_after,
-        created_before=args.created_before,
-        limit=args.limit,
-        offset=args.offset,
+        transaction_type=args.transaction_type,
+        sub_transaction_type=args.sub_transaction_type,
+        transaction_number=args.transaction_number,
+        start_time=start_time,
+        end_time=end_time,
+        page_num=args.page_num,
+        page_size=args.page_size,
         max_pages=args.max_pages,
     )
     return _emit(
@@ -315,10 +436,13 @@ def _handle_finance_account_transactions_query(args: argparse.Namespace) -> int:
             "domain": "finance",
             "action": "account-transactions-query",
             "filters": {
-                "created_after": args.created_after,
-                "created_before": args.created_before,
-                "limit": args.limit,
-                "offset": args.offset,
+                "transaction_type": args.transaction_type,
+                "sub_transaction_type": args.sub_transaction_type,
+                "transaction_number": args.transaction_number,
+                "start_time": start_time,
+                "end_time": end_time,
+                "page_num": args.page_num,
+                "page_size": args.page_size,
                 "max_pages": args.max_pages,
             },
             **result,
@@ -328,12 +452,25 @@ def _handle_finance_account_transactions_query(args: argparse.Namespace) -> int:
 
 
 def _handle_finance_logistics_fee_detail(args: argparse.Namespace) -> int:
+    bill_start_time = _normalize_bill_date_for_api(
+        args.bill_start_time, field_name="bill_start_time", is_end=False
+    )
+    bill_end_time = _normalize_bill_date_for_api(
+        args.bill_end_time, field_name="bill_end_time", is_end=True
+    )
     result = query_logistics_fee_detail(
         _with_client(),
-        created_after=args.created_after,
-        created_before=args.created_before,
-        limit=args.limit,
-        offset=args.offset,
+        seller_id=args.seller_id,
+        request_type=args.request_type,
+        trade_order_id=args.trade_order_id,
+        trade_order_line_id=args.trade_order_line_id,
+        fee_type=args.fee_type,
+        biz_flow_type=args.biz_flow_type,
+        bill_start_time=bill_start_time,
+        bill_end_time=bill_end_time,
+        page_no=args.page_no,
+        page_size=args.page_size,
+        total_records=args.total_records,
         max_pages=args.max_pages,
     )
     return _emit(
@@ -341,10 +478,17 @@ def _handle_finance_logistics_fee_detail(args: argparse.Namespace) -> int:
             "domain": "finance",
             "action": "logistics-fee-detail",
             "filters": {
-                "created_after": args.created_after,
-                "created_before": args.created_before,
-                "limit": args.limit,
-                "offset": args.offset,
+                "seller_id": args.seller_id,
+                "request_type": args.request_type,
+                "trade_order_id": args.trade_order_id,
+                "trade_order_line_id": args.trade_order_line_id,
+                "fee_type": args.fee_type,
+                "biz_flow_type": args.biz_flow_type,
+                "bill_start_time": bill_start_time,
+                "bill_end_time": bill_end_time,
+                "page_no": args.page_no,
+                "page_size": args.page_size,
+                "total_records": args.total_records,
                 "max_pages": args.max_pages,
             },
             **result,
@@ -354,16 +498,30 @@ def _handle_finance_logistics_fee_detail(args: argparse.Namespace) -> int:
 
 
 def _handle_finance_transaction_details_get(args: argparse.Namespace) -> int:
+    start_time = _normalize_date_for_api(args.start_time, field_name="start_time")
+    end_time = _normalize_date_for_api(args.end_time, field_name="end_time")
     result = get_transaction_details(
         _with_client(),
-        transaction_number=args.transaction_number,
+        trade_order_id=args.trade_order_id,
+        trade_order_line_id=args.trade_order_line_id,
+        trans_type=args.trans_type,
+        start_time=start_time,
+        end_time=end_time,
+        offset=args.offset,
+        limit=args.limit,
     )
     return _emit(
         {
             "domain": "finance",
             "action": "transaction-details-get",
             "filters": {
-                "transaction_number": args.transaction_number,
+                "trade_order_id": args.trade_order_id,
+                "trade_order_line_id": args.trade_order_line_id,
+                "trans_type": args.trans_type,
+                "start_time": start_time,
+                "end_time": end_time,
+                "offset": args.offset,
+                "limit": args.limit,
             },
             **result,
         },
@@ -705,19 +863,20 @@ def _handle_reviews_get_item_reviews(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
+    _normalize_datetime_filters(args)
 
     try:
         if args.domain == "orders" and args.action == "get":
             return _handle_orders_get(args)
 
-        # if args.domain == "finance" and args.action == "payout-status-get":
-        #     return _handle_finance_payout_status_get(args)
-        # if args.domain == "finance" and args.action == "account-transactions-query":
-        #     return _handle_finance_account_transactions_query(args)
-        # if args.domain == "finance" and args.action == "logistics-fee-detail":
-        #     return _handle_finance_logistics_fee_detail(args)
-        # if args.domain == "finance" and args.action == "transaction-details-get":
-        #     return _handle_finance_transaction_details_get(args)
+        if args.domain == "finance" and args.action == "payout-status-get":
+            return _handle_finance_payout_status_get(args)
+        if args.domain == "finance" and args.action == "account-transactions-query":
+            return _handle_finance_account_transactions_query(args)
+        if args.domain == "finance" and args.action == "logistics-fee-detail":
+            return _handle_finance_logistics_fee_detail(args)
+        if args.domain == "finance" and args.action == "transaction-details-get":
+            return _handle_finance_transaction_details_get(args)
 
         if args.domain == "products" and args.action == "get":
             return _handle_products_get(args)
