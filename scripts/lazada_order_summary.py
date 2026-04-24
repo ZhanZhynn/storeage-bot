@@ -39,7 +39,10 @@ def get_slack_client() -> WebClient:
         raise ValueError("SLACK_BOT_TOKEN environment variable not set")
     return WebClient(token=token)
 
-
+'''
+python3 scripts/lazada_order_summary.py --mode morning --channel C0AUMS4UTJB
+python3 scripts/lazada_order_summary.py --mode evening --channel C0AUMS4UTJB
+'''
 def fetch_orders_summary(days: int = 1, date: str | None = None) -> dict:
     """Fetch order summary using efficient single CLI call with retry logic."""
     last_error = None
@@ -116,6 +119,8 @@ def format_morning_message(status_breakdown: dict, error: str | None = None) -> 
     else:
         lines.extend(["", f":muscle: *Total needing attention: {total} orders*"])
 
+    lines.extend(["", ":link: https://sellercenter.lazada.com.my/apps/order/list?oldVersion=1&spm=a1zawi.portal_home.navi_left_sidebar.droot_normal_rp_asc_v2_ordersreviews_rp_asc_v2_ordersnewui_common_tools.4bee1e13D6S6vD&status=topack"])
+
     return "\n".join(lines)
 
 
@@ -163,7 +168,7 @@ def run_morning(channel: str) -> None:
     """Run morning summary - fetch orders by status."""
     print("Running morning summary with orders summary CLI...")
 
-    result = fetch_orders_summary(days=1)
+    result = fetch_orders_summary(days=7)
     error = result.get("error") if not result.get("ok", True) else None
     status_breakdown = result.get("status_breakdown", {})
 
@@ -181,7 +186,7 @@ def run_evening(channel: str) -> None:
     print("Running evening summary with orders summary CLI...")
 
     today = datetime.now(MALAYSIA_TZ).strftime("%Y-%m-%d")
-    result = fetch_orders_summary(days=1)
+    result = fetch_orders_summary(days=0)
     error = result.get("error") if not result.get("ok", True) else None
 
     total_orders = result.get("total_orders", 0)

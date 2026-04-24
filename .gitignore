@@ -39,3 +39,5 @@ logs/
 data/*
 .slack/apps.dev.json
 outputs/
+lazop-sdk-python/
+walkthrough.md
