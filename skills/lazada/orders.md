@@ -1,18 +1,30 @@
 # Lazada Orders Retrieval
 
-keywords: lazada, orders, order, getorders, orders/get, status, created_after, updated_at, pagination
+keywords: lazada, orders, order, getorders, orders/get, orders/item-get, orders/items-multiple, order/cancel-validate, status, created_after, updated_at, pagination, order_id
 
 ## Goal
 Fetch Lazada order-level data accurately for operational tracking and sales reporting.
 
-## Endpoint
-- Primary: `/orders/get`
+## Endpoints
+- List orders: `/orders/get`
+- Get single order: `/order/get`
+- Get order items: `/order/items/get`
+- Get multiple order items: `/orders/items/get`
+- Validate cancel: `/order/reverse/cancel/validate`
 
 ## Required Inputs
 - Date window (`created_after`/`created_before` or `update_after`/`update_before`)
 - Pagination (`offset`, `limit`)
 - Sort (`sort_by`, `sort_direction`)
 - `status` (default `all` unless user narrows)
+
+| Endpoint | Method | Required Params | Optional Params |
+|----------|--------|-----------------|------------------|
+| `/orders/get` | GET | status, limit, offset, sort_by, sort_direction | created_after, created_before, update_after, update_before |
+| `/order/get` | GET | order_id | - |
+| `/order/items/get` | GET | order_id | - |
+| `/orders/items/get` | GET | order_ids (JSON array) | - |
+| `/order/reverse/cancel/validate` | GET | order_id | order_item_id_list (JSON array) |
 
 ## Execution Pattern (Go SDK)
 1. Create client and set access token.
@@ -27,6 +39,32 @@ Fetch Lazada order-level data accurately for operational tracking and sales repo
 - Helper reads shared env config (`BOLTY_LAZADA_*`), computes signature internally, and returns JSON.
 - Datetime filter inputs (`created_*`, `update_*`) must use `YYYY-MM-DD`.
 - `YYYY-MM-DD` uses Malaysia timezone (`+08:00`): `*_after` maps to `00:00:00`, `*_before` maps to `23:59:59.999`.
+
+## Order Sub-API Commands
+
+### Get order items for single order
+```
+python3 -m lazada_helper.cli orders item-get --order-id 123456789
+```
+- Calls `/order/items/get`
+- Returns order items array
+- Normalized input: order_id as string
+
+### Get multiple order items
+```
+python3 -m lazada_helper.cli orders items-multiple --order-ids '["123456789","987654321"]'
+```
+- Calls `/orders/items/get`
+- accepts JSON array of order IDs
+- Returns orders with items grouped
+
+### Validate order cancel
+```
+python3 -m lazada_helper.cli orders cancel-validate --order-id 123456789 --order-item-id-list '["111111","222222"]'
+```
+- Calls `/order/reverse/cancel/validate`
+- order_item_id_list optional if canceling entire order
+- Returns validation result
 
 ## Recommended Defaults
 - `sort_by=updated_at`

@@ -1,14 +1,18 @@
 import argparse
 import json
+import random
 import sys
-from datetime import datetime, time, timedelta, timezone
+import time as time_module
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .client import (LazadaAPIError, LazadaClient, LazadaConfig,
                      LazadaConfigError)
 from .finance import (get_payout_status, get_transaction_details,
                       query_account_transactions, query_logistics_fee_detail)
-from .orders import build_default_order_window, fetch_orders, get_order_items
+from .orders import (build_default_order_window, fetch_orders, get_multiple_order_items,
+                    get_order, get_order_items, get_order_items_by_order_id,
+                    validate_order_cancel)
 from .products import get_product_item, get_products
 from .returns_refunds import (get_reverse_orders_for_seller,
                               list_return_detail, list_return_history,
@@ -126,6 +130,16 @@ def _build_parser() -> argparse.ArgumentParser:
     orders_get.add_argument("--sort-by", dest="sort_by", default="updated_at")
     orders_get.add_argument("--sort-direction", dest="sort_direction", default="DESC")
     orders_get.add_argument("--max-pages", dest="max_pages", type=int, default=10)
+
+    orders_item_get = orders_subparsers.add_parser("item-get", help="Fetch order items via /order/items/get")
+    orders_item_get.add_argument("--order-id", dest="order_id", required=True)
+
+    orders_items_multiple = orders_subparsers.add_parser("items-multiple", help="Fetch multiple order items via /orders/items/get")
+    orders_items_multiple.add_argument("--order-ids", dest="order_ids", required=True, help="JSON array of order IDs")
+
+    orders_cancel_validate = orders_subparsers.add_parser("cancel-validate", help="Validate order cancel via /order/reverse/cancel/validate")
+    orders_cancel_validate.add_argument("--order-id", dest="order_id", required=True)
+    orders_cancel_validate.add_argument("--order-item-id-list", dest="order_item_id_list", default=None, help="JSON array of order item IDs")
 
     finance = subparsers.add_parser("finance", help="Finance domain operations")
     finance_subparsers = finance.add_subparsers(dest="action", required=True)
@@ -280,6 +294,37 @@ def _build_parser() -> argparse.ArgumentParser:
         default="desc",
         help="Sort reviews by review date: asc=oldest first, desc=newest first",
     )
+    review_item_reviews_cmd.add_argument(
+        "--max-api-calls",
+        type=int,
+        default=10,
+        help="Max API calls to list_seller_reviews_history (rate limit guard)",
+    )
+
+    review_recent_orders_cmd = reviews_subparsers.add_parser(
+        "get-recent-orders",
+        help="Get reviews for most recent N completed orders",
+    )
+    review_recent_orders_cmd.add_argument("--days", type=int, default=30)
+    review_recent_orders_cmd.add_argument(
+        "--max-orders",
+        type=int,
+        default=10,
+        help="Max completed orders to fetch reviews for",
+    )
+    review_recent_orders_cmd.add_argument(
+        "--sort",
+        choices=("asc", "desc"),
+        default="desc",
+        help="Sort reviews by review date: asc=oldest first, desc=newest first",
+    )
+    review_recent_orders_cmd.add_argument(
+        "--max-api-calls",
+        type=int,
+        default=10,
+        help="Max API calls to list_seller_reviews_history (rate limit guard)",
+    )
+
     return parser
 
 def _emit(payload: dict[str, Any], ok: bool, status: str = "ok") -> int:
@@ -383,6 +428,80 @@ def _handle_orders_get(args: argparse.Namespace) -> int:
                 "sort_direction": args.sort_direction,
                 "max_pages": args.max_pages,
             },
+            **result,
+        },
+        ok=True,
+    )
+
+
+def _handle_orders_item_get(args: argparse.Namespace) -> int:
+    try:
+        result = get_order_items_by_order_id(_with_client(), order_id=args.order_id)
+    except Exception as err:
+        return _emit({"error": str(err)}, ok=False, status="runtime_error")
+
+    return _emit(
+        {
+            "domain": "orders",
+            "action": "item-get",
+            "order_id": args.order_id,
+            **result,
+        },
+        ok=True,
+    )
+
+
+def _handle_orders_items_multiple(args: argparse.Namespace) -> int:
+    try:
+        order_ids = json.loads(args.order_ids)
+    except json.JSONDecodeError as err:
+        return _emit({"error": f"Invalid JSON for --order-ids: {err}"}, ok=False, status="runtime_error")
+
+    if not isinstance(order_ids, list):
+        return _emit({"error": "--order-ids must be a JSON array"}, ok=False, status="runtime_error")
+
+    try:
+        result = get_multiple_order_items(_with_client(), order_ids=order_ids)
+    except Exception as err:
+        return _emit({"error": str(err)}, ok=False, status="runtime_error")
+
+    return _emit(
+        {
+            "domain": "orders",
+            "action": "items-multiple",
+            "order_ids": order_ids,
+            **result,
+        },
+        ok=True,
+    )
+
+
+def _handle_orders_cancel_validate(args: argparse.Namespace) -> int:
+    order_item_id_list = None
+    if args.order_item_id_list:
+        try:
+            order_item_id_list = json.loads(args.order_item_id_list)
+        except json.JSONDecodeError as err:
+            return _emit({"error": f"Invalid JSON for --order-item-id-list: {err}"}, ok=False, status="runtime_error")
+
+        if not isinstance(order_item_id_list, list):
+            return _emit({"error": "--order-item-id-list must be a JSON array"}, ok=False, status="runtime_error")
+
+    try:
+        result = validate_order_cancel(
+            _with_client(),
+            order_id=args.order_id,
+            order_item_id_list=order_item_id_list,
+        )
+    except Exception as err:
+        return _emit({"error": str(err)}, ok=False, status="runtime_error")
+
+    return _emit(
+        {
+            "domain": "orders",
+            "action": "cancel-validate",
+            "order_id": args.order_id,
+            "order_item_id_list": order_item_id_list,
             **result,
         },
         ok=True,
@@ -740,25 +859,43 @@ def _handle_reviews_seller_reply_add(args: argparse.Namespace) -> int:
 def _handle_reviews_get_item_reviews(args: argparse.Namespace) -> int:
     """
     Fetches reviews for items from completed orders in the last N days.
+    Uses rate limiting to avoid hitting Lazada API frequency limit.
     """
     client = _with_client()
     created_after, created_before = build_default_order_window(args.days)
     sort_desc = args.sort != "asc"
+    max_api_calls = getattr(args, "max_api_calls", 10)
 
-    # 1. Fetch completed orders
-    orders_result = get_order_items(
-        client,
-        created_after=created_after,
-        created_before=created_before,
-        status="delivered",
-    )
+    time_module.sleep(random.uniform(5.0, 8.0))
+
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            orders_result = fetch_orders(
+                client,
+                created_after=created_after,
+                created_before=created_before,
+                status="delivered",
+                limit=100,
+                sort_by="created_at",
+                sort_direction="DESC" if sort_desc else "ASC",
+                max_pages=1,
+            )
+            break
+        except LazadaAPIError as err:
+            if err.code == "SellerCallLimit" and attempt < max_retries - 1:
+                wait_time = (2 ** attempt) * 3 + random.uniform(1.0, 2.0)
+                time_module.sleep(wait_time)
+                continue
+            raise
 
     all_reviews = []
     processed_item_ids = set()
     request_ids = []
     item_breakdown = []
+    api_call_count = 0
+    rate_limit_stopped = False
 
-    # 2. Extract item_id and fetch reviews
     for order in orders_result.get("orders", []):
         order_items = order.get("items", [])
         if not isinstance(order_items, list):
@@ -768,6 +905,13 @@ def _handle_reviews_get_item_reviews(args: argparse.Namespace) -> int:
             item_id = item.get("item_id")
             if not item_id or item_id in processed_item_ids:
                 continue
+
+            if api_call_count >= max_api_calls:
+                rate_limit_stopped = True
+                break
+
+            time_module.sleep(random.uniform(0.3, 0.5))
+            api_call_count += 1
 
             try:
                 reviews_result = list_seller_reviews_history(
@@ -830,6 +974,9 @@ def _handle_reviews_get_item_reviews(args: argparse.Namespace) -> int:
                 )
             processed_item_ids.add(item_id)
 
+        if rate_limit_stopped:
+            break
+
     all_reviews = sorted(
         [review for review in all_reviews if isinstance(review, dict)],
         key=_review_timestamp_ms,
@@ -848,10 +995,178 @@ def _handle_reviews_get_item_reviews(args: argparse.Namespace) -> int:
         {
             "domain": "reviews",
             "action": "get-item-reviews",
-            "filters": {"days": args.days, "sort": args.sort},
+            "filters": {"days": args.days, "sort": args.sort, "max_api_calls": max_api_calls},
             "request_ids": request_ids,
             "review_ids": all_review_ids,
             "items_processed": len(processed_item_ids),
+            "api_calls_made": api_call_count,
+            "rate_limit_stopped": rate_limit_stopped,
+            "item_breakdown": item_breakdown,
+            "total_fetched": len(all_reviews),
+            "reviews": all_reviews,
+        },
+        ok=True,
+    )
+
+
+def _handle_reviews_get_recent_orders(args: argparse.Namespace) -> int:
+    """
+    Fetches reviews for the most recent N completed orders.
+    Uses rate limiting to avoid hitting Lazada API frequency limit.
+    """
+    client = _with_client()
+    created_after, created_before = build_default_order_window(args.days)
+    sort_desc = args.sort != "asc"
+    max_orders = getattr(args, "max_orders", 10)
+    max_api_calls = getattr(args, "max_api_calls", 10)
+
+    time_module.sleep(random.uniform(5.0, 8.0))
+
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            orders_result = fetch_orders(
+                client,
+                created_after=created_after,
+                created_before=created_before,
+                status="delivered",
+                limit=max_orders,
+                sort_by="created_at",
+                sort_direction="DESC" if sort_desc else "ASC",
+                max_pages=1,
+            )
+            break
+        except LazadaAPIError as err:
+            if err.code == "SellerCallLimit" and attempt < max_retries - 1:
+                wait_time = (2 ** attempt) * 3 + random.uniform(1.0, 2.0)
+                time_module.sleep(wait_time)
+                continue
+            raise
+
+    orders_list = orders_result.get("orders", [])[:max_orders]
+
+    all_reviews = []
+    processed_item_ids = set()
+    request_ids = []
+    item_breakdown = []
+    api_call_count = 0
+    rate_limit_stopped = False
+
+    for order in orders_list:
+        order_id = order.get("order_id")
+        order_items = order.get("items", [])
+        if not isinstance(order_items, list):
+            continue
+
+        for item in order_items:
+            item_id = item.get("item_id")
+            if not item_id or item_id in processed_item_ids:
+                continue
+
+            if api_call_count >= max_api_calls:
+                rate_limit_stopped = True
+                break
+
+            time_module.sleep(random.uniform(0.3, 0.5))
+            api_call_count += 1
+
+            try:
+                reviews_result = list_seller_reviews_history(
+                    client,
+                    created_after=created_after,
+                    created_before=created_before,
+                    item_id=str(item_id),
+                )
+                item_reviews = reviews_result.get("reviews", [])
+                item_request_ids = reviews_result.get("request_ids", [])
+                item_reviews = sorted(
+                    [review for review in item_reviews if isinstance(review, dict)],
+                    key=_review_timestamp_ms,
+                    reverse=sort_desc,
+                )
+                item_review_ids = []
+                seen_review_ids = set()
+                for review in item_reviews:
+                    review_id = _review_id(review)
+                    if review_id is None:
+                        continue
+                    if review_id in seen_review_ids:
+                        continue
+                    seen_review_ids.add(review_id)
+                    item_review_ids.append(review_id)
+
+                all_reviews.extend(item_reviews)
+                request_ids.extend(item_request_ids)
+                item_breakdown.append(
+                    {
+                        "order_id": str(order_id),
+                        "item_id": str(item_id),
+                        "reviews_fetched": len(item_reviews),
+                        "review_ids": item_review_ids,
+                        "request_ids": item_request_ids,
+                    }
+                )
+            except LazadaAPIError as err:
+                item_breakdown.append(
+                    {
+                        "order_id": str(order_id),
+                        "item_id": str(item_id),
+                        "reviews_fetched": 0,
+                        "review_ids": [],
+                        "request_ids": [],
+                        "status": "api_error",
+                        "error": str(err),
+                        "api_code": err.code,
+                        "api_request_id": err.request_id,
+                    }
+                )
+            except Exception as err:
+                item_breakdown.append(
+                    {
+                        "order_id": str(order_id),
+                        "item_id": str(item_id),
+                        "reviews_fetched": 0,
+                        "review_ids": [],
+                        "request_ids": [],
+                        "status": "runtime_error",
+                        "error": str(err),
+                    }
+                )
+            processed_item_ids.add(item_id)
+
+        if rate_limit_stopped:
+            break
+
+    all_reviews = sorted(
+        [review for review in all_reviews if isinstance(review, dict)],
+        key=_review_timestamp_ms,
+        reverse=sort_desc,
+    )
+    all_review_ids = []
+    seen_all_review_ids = set()
+    for review in all_reviews:
+        review_id = _review_id(review)
+        if review_id is None or review_id in seen_all_review_ids:
+            continue
+        seen_all_review_ids.add(review_id)
+        all_review_ids.append(review_id)
+
+    return _emit(
+        {
+            "domain": "reviews",
+            "action": "get-recent-orders",
+            "filters": {
+                "days": args.days,
+                "max_orders": max_orders,
+                "sort": args.sort,
+                "max_api_calls": max_api_calls,
+            },
+            "request_ids": request_ids,
+            "review_ids": all_review_ids,
+            "orders_processed": len(orders_list),
+            "unique_items": len(processed_item_ids),
+            "api_calls_made": api_call_count,
+            "rate_limit_stopped": rate_limit_stopped,
             "item_breakdown": item_breakdown,
             "total_fetched": len(all_reviews),
             "reviews": all_reviews,
@@ -868,6 +1183,12 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.domain == "orders" and args.action == "get":
             return _handle_orders_get(args)
+        if args.domain == "orders" and args.action == "item-get":
+            return _handle_orders_item_get(args)
+        if args.domain == "orders" and args.action == "items-multiple":
+            return _handle_orders_items_multiple(args)
+        if args.domain == "orders" and args.action == "cancel-validate":
+            return _handle_orders_cancel_validate(args)
 
         if args.domain == "finance" and args.action == "payout-status-get":
             return _handle_finance_payout_status_get(args)
@@ -900,6 +1221,8 @@ def main(argv: list[str] | None = None) -> int:
             return _handle_reviews_seller_reply_add(args)
         if args.domain == "reviews" and args.action == "get-item-reviews":
             return _handle_reviews_get_item_reviews(args)
+        if args.domain == "reviews" and args.action == "get-recent-orders":
+            return _handle_reviews_get_recent_orders(args)
 
         return _emit({"error": "Unsupported command"}, ok=False, status="invalid_command")
     except LazadaConfigError as err:
