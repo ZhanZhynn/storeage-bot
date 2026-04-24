@@ -141,6 +141,17 @@ def _build_parser() -> argparse.ArgumentParser:
     orders_cancel_validate.add_argument("--order-id", dest="order_id", required=True)
     orders_cancel_validate.add_argument("--order-item-id-list", dest="order_item_id_list", default=None, help="JSON array of order item IDs")
 
+    orders_summary = orders_subparsers.add_parser(
+        "summary", help="Get order summary with status breakdown in one call"
+    )
+    orders_summary.add_argument("--days", type=int, default=1, help="Number of days to look back")
+    orders_summary.add_argument("--date", type=str, default=None, help="Specific date (YYYY-MM-DD), takes precedence over --days")
+    orders_summary.add_argument(
+        "--short",
+        action="store_true",
+        help="Return summary only (no order list), faster for Slack/cron",
+    )
+
     finance = subparsers.add_parser("finance", help="Finance domain operations")
     finance_subparsers = finance.add_subparsers(dest="action", required=True)
 
@@ -506,6 +517,69 @@ def _handle_orders_cancel_validate(args: argparse.Namespace) -> int:
         },
         ok=True,
     )
+
+
+def _handle_orders_summary(args: argparse.Namespace) -> int:
+    """
+    Get order summary with status breakdown in one call.
+    Fetches all orders and computes status counts and sales totals.
+    Use --short for summary-only output (faster for Slack/cron).
+    """
+    client = _with_client()
+
+    if args.date:
+        created_after = f"{args.date}T00:00:00+08:00"
+        created_before = f"{args.date}T23:59:59.999+08:00"
+    else:
+        created_after, created_before = build_default_order_window(args.days)
+
+    result = fetch_orders(
+        client,
+        created_after=created_after,
+        created_before=created_before,
+        status="all",
+        limit=100,
+        max_pages=1,
+    )
+
+    orders = result.get("orders", [])
+    date_used = args.date if args.date else datetime.now(_MALAYSIA_TZ).strftime("%Y-%m-%d")
+
+    status_breakdown: dict[str, int] = {}
+    total_sales = 0.0
+
+    for order in orders:
+        statuses = order.get("statuses", [])
+        if not isinstance(statuses, list):
+            statuses = [statuses]
+
+        for s in statuses:
+            status_breakdown[s] = status_breakdown.get(s, 0) + 1
+
+        price_str = order.get("price", "0").replace(",", "")
+        try:
+            total_sales += float(price_str)
+        except (ValueError, TypeError):
+            pass
+
+    output = {
+        "domain": "orders",
+        "action": "summary",
+        "date": date_used,
+        "filters": {
+            "created_after": created_after,
+            "created_before": created_before,
+            "days": args.days,
+        },
+        "total_orders": len(orders),
+        "total_sales": total_sales,
+        "status_breakdown": status_breakdown,
+    }
+
+    if not getattr(args, "short", False):
+        output["orders"] = orders
+
+    return _emit(output, ok=True)
 
 
 def _handle_finance_payout_status_get(args: argparse.Namespace) -> int:
@@ -1189,6 +1263,8 @@ def main(argv: list[str] | None = None) -> int:
             return _handle_orders_items_multiple(args)
         if args.domain == "orders" and args.action == "cancel-validate":
             return _handle_orders_cancel_validate(args)
+        if args.domain == "orders" and args.action == "summary":
+            return _handle_orders_summary(args)
 
         if args.domain == "finance" and args.action == "payout-status-get":
             return _handle_finance_payout_status_get(args)

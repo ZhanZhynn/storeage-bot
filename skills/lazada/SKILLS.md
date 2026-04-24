@@ -2,6 +2,22 @@
 
 keywords: lazada, iop, open platform, app_key, access_token, seller, orders, products, finance, return, refund, review
 
+## Quick Cheat Sheet (Common Questions)
+
+| Question | CLI Command (Use This for Fast Results) |
+| :--- | :--- |
+| "How many orders?" | `python3 -m platform_helpers.lazada.cli orders summary --days 1 --short` |
+| "How much sales?" | Same command → check `total_sales` in output |
+| "Any returns?" | `python3 -m platform_helpers.lazada.cli returns-refunds return-history-list` |
+| "Product reviews?" | `python3 -m platform_helpers.lazada.cli reviews seller-history-list --item-id <ITEM_ID>` |
+| "Payout status?" | `python3 -m platform_helpers.lazada.cli finance payout-status-get --created-after 2026-04-01 --created-before 2026-04-30` |
+
+<!-- END_QUICK_ANSWER -->
+
+---
+
+# Full Documentation
+
 ## Goal
 Provide a repeatable workflow for fetching Lazada seller data using the local Go SDK and Lazada Open Platform APIs.
 
@@ -25,7 +41,7 @@ Provide a repeatable workflow for fetching Lazada seller data using the local Go
 ## Deterministic Command Preference
 - For API execution, prefer deterministic helper commands over raw ad-hoc curl.
 - Orders example:
-  - `python3 -m lazada_helper.cli orders get --days 7 --status all --limit 100 --max-pages 10`
+  - `python3 -m platform_helpers.lazada.cli orders summary --days 7 --short`
 - Date filter format for `created_*`, `update_*`, and `create_*`:
   - Use `YYYY-MM-DD` only.
   - Helper normalizes `YYYY-MM-DD` to endpoint-specific Lazada API formats.

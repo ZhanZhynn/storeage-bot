@@ -1,6 +1,21 @@
-# Lazada Finance Retrieval
+# Lazada Finance Summary
 
 keywords: lazada, finance, transaction, payout, statement, settlement, wallet, fee, income
+
+## Quick Answer (Use This)
+
+```bash
+# For earnings/payouts in date range:
+python3 -m lazada_helper.cli finance payout-status-get --created-after 2026-04-01 --created-before 2026-04-30
+```
+
+Returns: `payouts[]` with `amount`, `status`, `created_at`
+
+<!-- END_QUICK_ANSWER -->
+
+---
+
+# Full Documentation
 
 ## Goal
 Fetch Lazada financial records needed for payout reconciliation and fee analysis.

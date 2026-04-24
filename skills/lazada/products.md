@@ -1,6 +1,20 @@
-# Lazada Products Retrieval
+# Lazada Products Summary
 
 keywords: lazada, products, product, sku, item, inventory, getproducts, listing, seller sku
+
+## Quick Answer (Use This)
+
+```bash
+python3 -m platform_helpers.lazada.cli products get --filter all --limit 10
+```
+
+Returns: product list with `item_id`, `name`, `price`, `quantity`, `status`
+
+<!-- END_QUICK_ANSWER -->
+
+---
+
+# Full Documentation
 
 ## Goal
 Retrieve Lazada catalog/product information for SKU-level checks, listing health, and stock visibility.

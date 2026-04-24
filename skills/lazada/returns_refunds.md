@@ -1,6 +1,21 @@
-# Lazada Returns and Refunds Retrieval
+# Lazada Returns & Refunds Summary
 
 keywords: lazada, return, returns, refund, refunds, dispute, reverse logistics, claim
+
+## Quick Answer (Use This)
+
+```bash
+# Get return/refund cases in date range:
+python3 -m lazada_helper.cli returns-refunds return-history-list --created-after 2026-04-01 --created-before 2026-04-30
+```
+
+Returns: `returns[]` with `order_id`, `reason`, `status`, `refund_amount`
+
+<!-- END_QUICK_ANSWER -->
+
+---
+
+# Full Documentation
 
 ## Goal
 Track return/refund cases and quantify impact on order outcomes and cash flow.

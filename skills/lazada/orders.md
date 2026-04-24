@@ -1,6 +1,26 @@
-# Lazada Orders Retrieval
+# Lazada Orders Summary
 
-keywords: lazada, orders, order, getorders, orders/get, orders/item-get, orders/items-multiple, order/cancel-validate, status, created_after, updated_at, pagination, order_id
+keywords: lazada, orders, order, getorders, orders/get, orders/summary, orders/item-get, orders/items-multiple, order/cancel-validate, status, created_after, updated_at, pagination, order_id
+
+## Quick Answer (Use This - Recommended for All Questions)
+
+```bash
+# Orders/Sales summary - fast, no order list (for Slack/cron):
+python3 -m platform_helpers.lazada.cli orders summary --days 1 --short
+
+# For any date range:
+python3 -m platform_helpers.lazada.cli orders summary --date 2026-04-23 --short
+```
+
+Returns: `total_orders`, `total_sales`, `status_breakdown{}`
+
+**IMPORTANT:** Use `orders summary --short` for quick answers. Don't use `orders get` with `--short` - it doesn't exist!
+
+<!-- END_QUICK_ANSWER -->
+
+---
+
+# Full Documentation
 
 ## Goal
 Fetch Lazada order-level data accurately for operational tracking and sales reporting.
@@ -42,9 +62,25 @@ Fetch Lazada order-level data accurately for operational tracking and sales repo
 
 ## Order Sub-API Commands
 
+### Order Summary (Recommended for Reports)
+```
+# Fast - summary only (no order list):
+python3 -m platform_helpers.lazada.cli orders summary --days 1 --short
+
+# With full order list:
+python3 -m platform_helpers.lazada.cli orders summary --days 1
+
+# For specific date:
+python3 -m platform_helpers.lazada.cli orders summary --date 2026-04-23 --short
+```
+- Fetches all orders in a single API call and computes status breakdown
+- Returns: `total_orders`, `total_sales`, `status_breakdown` (dict)
+- Use `--short` flag for cron jobs and Slack summaries
+- Args: `--days` (default 1), `--date` (YYYY-MM-DD, overrides --days), `--short` (no order list)
+
 ### Get order items for single order
 ```
-python3 -m lazada_helper.cli orders item-get --order-id 123456789
+python3 -m platform_helpers.lazada.cli orders item-get --order-id 123456789
 ```
 - Calls `/order/items/get`
 - Returns order items array
@@ -52,7 +88,7 @@ python3 -m lazada_helper.cli orders item-get --order-id 123456789
 
 ### Get multiple order items
 ```
-python3 -m lazada_helper.cli orders items-multiple --order-ids '["123456789","987654321"]'
+python3 -m platform_helpers.lazada.cli orders items-multiple --order-ids '["123456789","987654321"]'
 ```
 - Calls `/orders/items/get`
 - accepts JSON array of order IDs
@@ -60,7 +96,7 @@ python3 -m lazada_helper.cli orders items-multiple --order-ids '["123456789","98
 
 ### Validate order cancel
 ```
-python3 -m lazada_helper.cli orders cancel-validate --order-id 123456789 --order-item-id-list '["111111","222222"]'
+python3 -m platform_helpers.lazada.cli orders cancel-validate --order-id 123456789 --order-item-id-list '["111111","222222"]'
 ```
 - Calls `/order/reverse/cancel/validate`
 - order_item_id_list optional if canceling entire order

@@ -1,6 +1,21 @@
-# Lazada Product Reviews Retrieval
+# Lazada Product Reviews Summary
 
 keywords: lazada, reviews, review, rating, seller reviews, feedback, moderation
+
+## Quick Answer (Use This)
+
+```bash
+# Get recent reviews for a product:
+python3 -m lazada_helper.cli reviews seller-history-list --created-after 2026-04-01 --created-before 2026-04-30 --item-id <ITEM_ID>
+```
+
+Returns: `reviews[]` with `rating`, `content`, `author`, `created_at`
+
+<!-- END_QUICK_ANSWER -->
+
+---
+
+# Full Documentation
 
 ## Goal
 Retrieve seller review streams for quality monitoring, sentiment checks, and response workflows.
