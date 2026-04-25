@@ -3,6 +3,34 @@ from typing import Any
 from .client import LazadaClient
 
 
+def _normalize_product(product: dict[str, Any]) -> dict[str, Any]:
+    skus = product.get("skus", [])
+    normalized_skus = []
+    for sku in skus:
+        normalized_skus.append({
+            "SellerSku": sku.get("SellerSku"),
+            "ShopSku": sku.get("ShopSku"),
+            "price": sku.get("price"),
+            "specialPrice": sku.get("special_price"),
+            "quantity": sku.get("quantity"),
+            "Status": sku.get("Status"),
+        })
+
+    attrs = product.get("attributes") or {}
+    filtered_attrs = {
+        "name": attrs.get("name"),
+        "brand": attrs.get("brand"),
+        "model": attrs.get("model"),
+    }
+
+    return {
+        "item_id": product.get("item_id"),
+        "attributes": filtered_attrs,
+        "status": product.get("status"),
+        "skus": normalized_skus,
+    }
+
+
 def get_products(
     client: LazadaClient,
     *,
@@ -14,25 +42,27 @@ def get_products(
     offset: int = 0,
     limit: int = 50,
     options: str = "1",
-    max_pages: int = 10,
+    max_pages: int | None = None,
 ) -> dict[str, Any]:
     if limit <= 0:
         raise ValueError("limit must be > 0")
     if offset < 0:
         raise ValueError("offset must be >= 0")
-    if max_pages <= 0:
-        raise ValueError("max_pages must be > 0")
 
     items: list[dict[str, Any]] = []
     request_ids: list[str] = []
     current_offset = offset
     has_more = False
+    total_products: int | None = None
 
-    for _ in range(max_pages):
+    while True:
+        if max_pages is not None and len(request_ids) >= max_pages:
+            break
+
         params: dict[str, Any] = {
             "filter": filter_expr,
             "offset": current_offset,
-            "limit": limit,
+            "limit": str(limit),
             "options": options,
         }
         if create_before:
@@ -58,26 +88,32 @@ def get_products(
 
         items.extend(page_items)
 
+        if total_products is None:
+            total_products = data.get("total_products")
+            if isinstance(total_products, int):
+                has_more = True
+            else:
+                has_more = False
+
         if len(page_items) < limit:
             has_more = False
             break
 
-        total_products = data.get("total_products")
         current_offset += limit
         if isinstance(total_products, int) and current_offset >= total_products:
             has_more = False
             break
 
-        has_more = True
+    normalized_products = [_normalize_product(p) for p in items]
 
     return {
         "endpoint": "/products/get",
-        "total_fetched": len(items),
+        "total_products": len(normalized_products),
         "pages_fetched": len(request_ids),
         "next_offset": current_offset if has_more else None,
         "has_more": has_more,
         "request_ids": request_ids,
-        "products": items,
+        "products": normalized_products,
     }
 
 

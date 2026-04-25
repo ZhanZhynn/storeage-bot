@@ -5,10 +5,14 @@ keywords: lazada, products, product, sku, item, inventory, getproducts, listing,
 ## Quick Answer (Use This)
 
 ```bash
-python3 -m platform_helpers.lazada.cli products get --filter all --limit 10
+# Fetch all products (default behavior)
+python3 -m lazada_helper.cli products get --filter all
+
+# Fetch specific number
+python3 -m lazada_helper.cli products get --filter all --limit 10
 ```
 
-Returns: product list with `item_id`, `name`, `price`, `quantity`, `status`
+Returns: product list with `item_id`, `attributes` (name, brand, model), `status`, `skus` (SellerSku, ShopSku, price, quantity, Status)
 
 <!-- END_QUICK_ANSWER -->
 
@@ -24,14 +28,21 @@ Retrieve Lazada catalog/product information for SKU-level checks, listing health
 - `/product/item/get`
 
 ## Deterministic Helper Commands (Preferred)
-- Product list:
-  - `python3 -m lazada_helper.cli products get --filter all --update-after 2026-04-01 --update-before 2026-04-21 --limit 100 --offset 0 --max-pages 10`
+- Fetch all products (default):
+  - `python3 -m lazada_helper.cli products get --filter all`
+- Fetch specific count:
+  - `python3 -m lazada_helper.cli products get --filter all --limit 10`
+  - `python3 -m lazada_helper.cli products get --filter all --limit 10 --max-pages 5` (50 products)
 - Product item detail:
   - `python3 -m lazada_helper.cli products item-get --item-id <ITEM_ID>`
 
-## Datetime Input Rules
-- `create_after`, `create_before`, `update_after`, and `update_before` must use `YYYY-MM-DD`.
-- Date-only values use Malaysia timezone (`+08:00`), where `*_after` is start of day and `*_before` is end of day (`23:59:59.999`).
+## Pagination
+- `--limit`: Items per page (max 50, default 50)
+- `--max-pages`: Number of pages to fetch (optional, defaults to unlimited when omitted)
+- No limit specified → fetches all products
+
+## Date Filtering
+Not supported for products endpoint. Use `--filter` only (e.g., `--filter all`, `--filter live`, `--filter inactive`).
 
 ## Endpoint Mapping
 - `products get` -> `/products/get`

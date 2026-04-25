@@ -3,16 +3,16 @@ import json
 import random
 import sys
 import time as time_module
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 from typing import Any
 
 from .client import (LazadaAPIError, LazadaClient, LazadaConfig,
                      LazadaConfigError)
 from .finance import (get_payout_status, get_transaction_details,
                       query_account_transactions, query_logistics_fee_detail)
-from .orders import (build_default_order_window, fetch_orders, get_multiple_order_items,
-                    get_order, get_order_items, get_order_items_by_order_id,
-                    validate_order_cancel)
+from .orders import (build_default_order_window, fetch_orders,
+                     get_multiple_order_items, get_order, get_order_items,
+                     get_order_items_by_order_id, validate_order_cancel)
 from .products import get_product_item, get_products
 from .returns_refunds import (get_reverse_orders_for_seller,
                               list_return_detail, list_return_history,
@@ -85,10 +85,10 @@ def _normalize_datetime_filter(value: str | None, *, is_before: bool) -> str | N
 
     if is_before:
         dt = datetime.combine(date_value, time(23, 59, 59, 999000), _MALAYSIA_TZ)
-        return dt.isoformat(timespec="milliseconds")
+        return dt.isoformat()
 
     dt = datetime.combine(date_value, time(0, 0, 0), _MALAYSIA_TZ)
-    return dt.isoformat(timespec="seconds")
+    return dt.isoformat()
 
 
 def _normalize_datetime_filters(args: argparse.Namespace) -> None:
@@ -224,9 +224,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "--update-after", dest="update_after", default=None, help=_DATETIME_FILTER_HELP
     )
     products_get_cmd.add_argument("--offset", type=int, default=0)
-    products_get_cmd.add_argument("--limit", type=int, default=100)
+    products_get_cmd.add_argument("--limit", type=int, default=10)
     products_get_cmd.add_argument("--options", default="1")
-    products_get_cmd.add_argument("--max-pages", dest="max_pages", type=int, default=10)
+    products_get_cmd.add_argument("--max-pages", dest="max_pages", type=int, default=None)
 
     product_item_get_cmd = products_subparsers.add_parser(
         "item-get", help="Fetch product detail via /product/item/get"
@@ -737,20 +737,10 @@ def _handle_products_get(args: argparse.Namespace) -> int:
     )
     return _emit(
         {
-            "domain": "products",
-            "action": "get",
-            "filters": {
-                "filter": args.filter_expr,
-                "create_before": args.create_before,
-                "create_after": args.create_after,
-                "update_before": args.update_before,
-                "update_after": args.update_after,
-                "offset": args.offset,
-                "limit": args.limit,
-                "options": args.options,
-                "max_pages": args.max_pages,
-            },
-            **result,
+            "products": result["products"],
+            "total_products": result["total_products"],
+            "has_more": result["has_more"],
+            "pages_fetched": result["pages_fetched"],
         },
         ok=True,
     )
