@@ -1,4 +1,6 @@
-# Slack AI Chatbot
+# StoreAge Bot
+
+An AI-powered Slack chatbot with multi-marketplace platform helpers (Lazada, Shopee). The bot routes AI interactions through OpenCode CLI and provides deterministic CLI helpers for marketplace operations.
 
 This Slack chatbot app template offers a customizable solution for integrating AI-powered conversations into your Slack workspace. Here's what the app can do out of the box:
 
