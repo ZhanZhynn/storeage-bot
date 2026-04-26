@@ -41,6 +41,12 @@ Next, set the gathered tokens as environment variables using the following comma
 # MacOS/Linux
 export SLACK_BOT_TOKEN=<your-bot-token>
 export SLACK_APP_TOKEN=<your-app-token>
+export OPENCODE_URL=http://127.0.0.1:4096
+export OPENCODE_MODEL=opencode/ling-2.6-flash-free
+export OPENCODE_MODELS=opencode/ling-2.6-flash-free,opencode/nemotron-3-super-free,opencode/minimax-m2.5-free,opencode/gpt-5-nano
+export BOLTY_LAZADA_APP_KEY=
+export BOLTY_LAZADA_APP_SECRET=
+export BOLTY_LAZADA_ACCESS_TOKEN=
 ```
 
 ```pwsh
