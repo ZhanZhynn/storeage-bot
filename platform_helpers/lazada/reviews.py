@@ -1,16 +1,11 @@
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 from typing import Any
 
 from .client import LazadaClient
-from .models import (
-    SellerReviewReplyResponse,
-    SellerReviewsHistoryResponse,
-    SellerReviewsV2Response,
-)
+from .models import (SellerReviewReplyResponse, SellerReviewsHistoryResponse,
+                     SellerReviewsV2Response)
 
-
-_MAX_HISTORY_SPAN_MS = 3 * 24 * 60 * 60 * 1000
+_MAX_HISTORY_SPAN_MS = 7 * 24 * 60 * 60 * 1000
 
 
 def _to_epoch_millis(value: str) -> int:
@@ -60,7 +55,7 @@ def list_seller_reviews_history(
     window_start = start_time
     while window_start <= end_time:
         window_end = min(end_time, window_start + _MAX_HISTORY_SPAN_MS - 1)
-        page = current if window_start == start_time else 1
+        page = current
 
         for _ in range(max_pages):
             payload = client.get(
@@ -70,7 +65,6 @@ def list_seller_reviews_history(
                     "start_time": window_start,
                     "end_time": window_end,
                     "current": page,
-                    "limit": limit,
                 },
             )
             request_id = payload.get("request_id")
@@ -78,7 +72,7 @@ def list_seller_reviews_history(
                 request_ids.append(str(request_id))
 
             data = payload.get("data") or {}
-            page_reviews = data.get("reviews")
+            page_reviews = data.get("id_list")
             if not isinstance(page_reviews, list):
                 page_reviews = data.get("review_list")
             if not isinstance(page_reviews, list):
@@ -96,7 +90,6 @@ def list_seller_reviews_history(
             has_more = True
 
         window_start = window_end + 1
-
     return SellerReviewsHistoryResponse(
         endpoint="/review/seller/history/list",
         total_reviews=len(reviews),
@@ -126,7 +119,7 @@ def list_seller_reviews_v2(
     payload = client.get("/review/seller/list/v2", params)
     request_id = payload.get("request_id")
     data = payload.get("data") or {}
-
+    print(payload)
     review_list = data.get("review_list")
     if not isinstance(review_list, list):
         review_list = data.get("reviews")

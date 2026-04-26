@@ -406,7 +406,7 @@ class SellerReviewsHistoryResponse(BaseModel):
     pages_fetched: int = 0
     next_offset: int | None = None
     has_more: bool = False
-    reviews: list[Review] = []
+    reviews: list[str] = []
 
     model_config = ConfigDict(extra="allow")
 
