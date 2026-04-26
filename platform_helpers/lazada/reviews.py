@@ -3,6 +3,11 @@ from datetime import timezone
 from typing import Any
 
 from .client import LazadaClient
+from .models import (
+    SellerReviewReplyResponse,
+    SellerReviewsHistoryResponse,
+    SellerReviewsV2Response,
+)
 
 
 _MAX_HISTORY_SPAN_MS = 3 * 24 * 60 * 60 * 1000
@@ -32,7 +37,7 @@ def list_seller_reviews_history(
     current: int = 1,
     limit: int = 100,
     max_pages: int = 10,
-) -> dict[str, Any]:
+) -> SellerReviewsHistoryResponse:
     if not item_id:
         raise ValueError("item_id is required for seller-history-list")
     if current <= 0:
@@ -92,15 +97,15 @@ def list_seller_reviews_history(
 
         window_start = window_end + 1
 
-    return {
-        "endpoint": "/review/seller/history/list",
-        "total_fetched": len(reviews),
-        "pages_fetched": len(request_ids),
-        "next_current": page if has_more else None,
-        "has_more": has_more,
-        "request_ids": request_ids,
-        "reviews": reviews,
-    }
+    return SellerReviewsHistoryResponse(
+        endpoint="/review/seller/history/list",
+        total_reviews=len(reviews),
+        pages_fetched=len(request_ids),
+        next_offset=page if has_more else None,
+        has_more=has_more,
+        request_ids=request_ids,
+        reviews=reviews,  # type: ignore[arg-type]
+    )
 
 
 def list_seller_reviews_v2(
@@ -108,7 +113,7 @@ def list_seller_reviews_v2(
     *,
     id_list: str,
     item_id: str | None = None,
-) -> dict[str, Any]:
+) -> SellerReviewsV2Response:
     if not id_list:
         raise ValueError("id_list is required for seller-list-v2")
 
@@ -130,12 +135,11 @@ def list_seller_reviews_v2(
     if not isinstance(review_list, list):
         review_list = []
 
-    return {
-        "endpoint": "/review/seller/list/v2",
-        "request_ids": [str(request_id)] if request_id else [],
-        "total_fetched": len(review_list),
-        "reviews": review_list,
-    }
+    return SellerReviewsV2Response(
+        endpoint="/review/seller/list/v2",
+        request_ids=[str(request_id)] if request_id else [],
+        reviews=review_list,  # type: ignore[arg-type]
+    )
 
 
 def add_seller_review_reply(
@@ -143,7 +147,7 @@ def add_seller_review_reply(
     *,
     id_list: str,
     content: str,
-) -> dict[str, Any]:
+) -> SellerReviewReplyResponse:
     payload = client.post(
         "/review/seller/reply/add",
         {
@@ -152,9 +156,7 @@ def add_seller_review_reply(
         },
     )
     request_id = payload.get("request_id")
-    data = payload.get("data") or {}
-    return {
-        "endpoint": "/review/seller/reply/add",
-        "request_ids": [str(request_id)] if request_id else [],
-        "reply_result": data,
-    }
+    return SellerReviewReplyResponse(
+        endpoint="/review/seller/reply/add",
+        request_ids=[str(request_id)] if request_id else [],
+    )

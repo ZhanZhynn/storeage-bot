@@ -1,6 +1,12 @@
 from typing import Any
 
 from .client import LazadaClient
+from .models import (
+    AccountTransactionsResponse,
+    LogisticsFeeDetailResponse,
+    PayoutStatusResponse,
+    TransactionDetailsResponse,
+)
 
 
 def _extract_request_id(payload: Any) -> list[str]:
@@ -104,7 +110,7 @@ def get_payout_status(
     limit: int = 100,
     offset: int = 0,
     max_pages: int = 10,
-) -> dict[str, Any]:
+) -> PayoutStatusResponse:
     if limit <= 0:
         raise ValueError("limit must be > 0")
     if offset < 0:
@@ -159,15 +165,15 @@ def get_payout_status(
 
         has_more = True
 
-    return {
-        "endpoint": "/finance/payout/status/get",
-        "total_fetched": len(items),
-        "pages_fetched": len(request_ids),
-        "next_offset": current_offset if has_more else None,
-        "has_more": has_more,
-        "request_ids": request_ids,
-        "payouts": items,
-    }
+    return PayoutStatusResponse(
+        endpoint="/finance/payout/status/get",
+        total_payouts=len(items),
+        pages_fetched=len(request_ids),
+        next_offset=current_offset if has_more else None,
+        has_more=has_more,
+        request_ids=request_ids,
+        payouts=items,  # type: ignore[arg-type]
+    )
 
 
 def query_account_transactions(
@@ -181,7 +187,7 @@ def query_account_transactions(
     page_num: int = 1,
     page_size: int = 10,
     max_pages: int = 10,
-) -> dict[str, Any]:
+) -> AccountTransactionsResponse:
     base_params: dict[str, Any] = {
         "start_time": start_time,
         "end_time": end_time,
@@ -193,7 +199,7 @@ def query_account_transactions(
     if transaction_number:
         base_params["transaction_number"] = transaction_number
 
-    result = _paginate_by_page_num(
+    internal_result = _paginate_by_page_num(
         client,
         endpoint="/finance/transaction/accountTransactions/query",
         base_params=base_params,
@@ -202,8 +208,16 @@ def query_account_transactions(
         page_size=page_size,
         max_pages=max_pages,
     )
-    result["transactions"] = result.pop("items")
-    return result
+
+    return AccountTransactionsResponse(
+        endpoint="/finance/transaction/accountTransactions/query",
+        request_ids=internal_result.get("request_ids", []),
+        total_transactions=internal_result.get("total_fetched", 0),
+        pages_fetched=internal_result.get("pages_fetched", 0),
+        next_page=internal_result.get("next_page_num"),
+        has_more=internal_result.get("has_more", False),
+        transactions=internal_result.get("items", []),  # type: ignore[arg-type]
+    )
 
 
 def query_logistics_fee_detail(
@@ -221,7 +235,7 @@ def query_logistics_fee_detail(
     page_size: int = 10,
     total_records: int | None = None,
     max_pages: int = 10,
-) -> dict[str, Any]:
+) -> LogisticsFeeDetailResponse:
     if page_no <= 0:
         raise ValueError("page_no must be > 0")
     if page_size <= 0:
@@ -291,15 +305,15 @@ def query_logistics_fee_detail(
         has_more = True
         current_page = next_page
 
-    return {
-        "endpoint": "/lbs/slb/queryLogisticsFeeDetail",
-        "total_fetched": len(items),
-        "pages_fetched": len(request_ids),
-        "next_page_no": current_page if has_more else None,
-        "has_more": has_more,
-        "request_ids": request_ids,
-        "logistics_fee_details": items,
-    }
+    return LogisticsFeeDetailResponse(
+        endpoint="/lbs/slb/queryLogisticsFeeDetail",
+        total_records=len(items),
+        pages_fetched=len(request_ids),
+        next_page_no=current_page if has_more else None,
+        has_more=has_more,
+        request_ids=request_ids,
+        fees=items,  # type: ignore[arg-type]
+    )
 
 
 def get_transaction_details(
@@ -312,7 +326,7 @@ def get_transaction_details(
     end_time: str,
     offset: int = 0,
     limit: int = 100,
-) -> dict[str, Any]:
+) -> TransactionDetailsResponse:
     if offset < 0:
         raise ValueError("offset must be >= 0")
     if limit <= 0:
@@ -341,8 +355,9 @@ def get_transaction_details(
         if details_value is not None:
             details = details_value
 
-    return {
-        "endpoint": "/finance/transaction/details/get",
-        "request_ids": request_ids,
-        "details": details,
-    }
+    return TransactionDetailsResponse(
+        endpoint="/finance/transaction/details/get",
+        request_ids=request_ids,
+        total_records=len(details) if isinstance(details, list) else 0,
+        details=details,  # type: ignore[arg-type]
+    )

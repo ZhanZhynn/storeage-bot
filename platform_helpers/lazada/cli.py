@@ -11,8 +11,8 @@ from .client import (LazadaAPIError, LazadaClient, LazadaConfig,
 from .finance import (get_payout_status, get_transaction_details,
                       query_account_transactions, query_logistics_fee_detail)
 from .orders import (build_default_order_window, fetch_orders,
-                     get_multiple_order_items, get_order, get_order_items,
-                     get_order_items_by_order_id, validate_order_cancel)
+                     get_multiple_order_items, get_order_items_by_order_id,
+                     validate_order_cancel)
 from .products import get_product_item, get_products
 from .returns_refunds import (get_reverse_orders_for_seller,
                               list_return_detail, list_return_history,
@@ -246,6 +246,7 @@ def _build_parser() -> argparse.ArgumentParser:
     rr_detail_cmd.add_argument("--offset", type=int, default=0)
     rr_detail_cmd.add_argument("--limit", type=int, default=100)
     rr_detail_cmd.add_argument("--max-pages", dest="max_pages", type=int, default=10)
+    rr_detail_cmd.add_argument("--reverse-order-id", dest="reverse_order_id", type=int, required=True)
 
     rr_history_cmd = rr_subparsers.add_parser(
         "return-history-list", help="List return history via /order/reverse/return/history/list"
@@ -255,10 +256,12 @@ def _build_parser() -> argparse.ArgumentParser:
     rr_history_cmd.add_argument("--offset", type=int, default=0)
     rr_history_cmd.add_argument("--limit", type=int, default=100)
     rr_history_cmd.add_argument("--max-pages", dest="max_pages", type=int, default=10)
+    rr_history_cmd.add_argument("--reverse-order-line-id", dest="reverse_order_line_id", type=int, required=True)
 
-    _rr_reason_cmd = rr_subparsers.add_parser(  # noqa: F841
+    rr_reason_cmd = rr_subparsers.add_parser(  # noqa: F841
         "reason-list", help="List return reasons via /order/reverse/reason/list"
     )
+    rr_reason_cmd.add_argument("--reverse-order-line-id", dest="reverse_order_line_id", type=int, required=True)
 
     rr_reverse_orders_cmd = rr_subparsers.add_parser(
         "get-reverse-orders-for-seller",
@@ -439,7 +442,7 @@ def _handle_orders_get(args: argparse.Namespace) -> int:
                 "sort_direction": args.sort_direction,
                 "max_pages": args.max_pages,
             },
-            **result,
+            **result.model_dump(),
         },
         ok=True,
     )
@@ -456,7 +459,7 @@ def _handle_orders_item_get(args: argparse.Namespace) -> int:
             "domain": "orders",
             "action": "item-get",
             "order_id": args.order_id,
-            **result,
+            **result.model_dump(),
         },
         ok=True,
     )
@@ -481,7 +484,7 @@ def _handle_orders_items_multiple(args: argparse.Namespace) -> int:
             "domain": "orders",
             "action": "items-multiple",
             "order_ids": order_ids,
-            **result,
+            **result.model_dump(),
         },
         ok=True,
     )
@@ -513,7 +516,7 @@ def _handle_orders_cancel_validate(args: argparse.Namespace) -> int:
             "action": "cancel-validate",
             "order_id": args.order_id,
             "order_item_id_list": order_item_id_list,
-            **result,
+            **result.model_dump(),
         },
         ok=True,
     )
@@ -542,23 +545,28 @@ def _handle_orders_summary(args: argparse.Namespace) -> int:
         max_pages=1,
     )
 
-    orders = result.get("orders", [])
+    orders = result.orders
     date_used = args.date if args.date else datetime.now(_MALAYSIA_TZ).strftime("%Y-%m-%d")
 
     status_breakdown: dict[str, int] = {}
     total_sales = 0.0
 
     for order in orders:
-        statuses = order.get("statuses", [])
+        statuses = order.get("statuses", []) if isinstance(order, dict) else (order.statuses or [])
         if not isinstance(statuses, list):
             statuses = [statuses]
 
         for s in statuses:
             status_breakdown[s] = status_breakdown.get(s, 0) + 1
 
-        price_str = order.get("price", "0").replace(",", "")
+        price = order.get("price") if isinstance(order, dict) else order.price
+        voucher_seller = order.get("voucher_seller") if isinstance(order, dict) else order.voucher_seller
+        shipping_fee_discount_seller = order.get("shipping_fee_discount_seller") if isinstance(order, dict) else order.shipping_fee_discount_seller
+        price_str = str(price or "0").replace(",", "")
+        voucher_seller_str = str(voucher_seller or "0").replace(",", "")
+        shipping_fee_discount_seller = str(shipping_fee_discount_seller or "0").replace(",", "")
         try:
-            total_sales += float(price_str)
+            total_sales += float(price_str) + float(voucher_seller_str) + float(shipping_fee_discount_seller)
         except (ValueError, TypeError):
             pass
 
@@ -577,7 +585,7 @@ def _handle_orders_summary(args: argparse.Namespace) -> int:
     }
 
     if not getattr(args, "short", False):
-        output["orders"] = orders
+        output["orders"] = [o.model_dump() if hasattr(o, "model_dump") else o for o in orders]
 
     return _emit(output, ok=True)
 
@@ -604,7 +612,7 @@ def _handle_finance_payout_status_get(args: argparse.Namespace) -> int:
                 "offset": args.offset,
                 "max_pages": args.max_pages,
             },
-            **result,
+            **result.model_dump(),
         },
         ok=True,
     )
@@ -638,7 +646,7 @@ def _handle_finance_account_transactions_query(args: argparse.Namespace) -> int:
                 "page_size": args.page_size,
                 "max_pages": args.max_pages,
             },
-            **result,
+            **result.model_dump(),
         },
         ok=True,
     )
@@ -684,7 +692,7 @@ def _handle_finance_logistics_fee_detail(args: argparse.Namespace) -> int:
                 "total_records": args.total_records,
                 "max_pages": args.max_pages,
             },
-            **result,
+            **result.model_dump(),
         },
         ok=True,
     )
@@ -716,7 +724,7 @@ def _handle_finance_transaction_details_get(args: argparse.Namespace) -> int:
                 "offset": args.offset,
                 "limit": args.limit,
             },
-            **result,
+            **result.model_dump(),
         },
         ok=True,
     )
@@ -735,12 +743,13 @@ def _handle_products_get(args: argparse.Namespace) -> int:
         options=args.options,
         max_pages=args.max_pages,
     )
+    result_dict = result.model_dump()
     return _emit(
         {
-            "products": result["products"],
-            "total_products": result["total_products"],
-            "has_more": result["has_more"],
-            "pages_fetched": result["pages_fetched"],
+            "products": result_dict["products"],
+            "total_products": result_dict["total_products"],
+            "has_more": result_dict["has_more"],
+            "pages_fetched": result_dict["pages_fetched"],
         },
         ok=True,
     )
@@ -755,7 +764,7 @@ def _handle_products_item_get(args: argparse.Namespace) -> int:
             "filters": {
                 "item_id": args.item_id,
             },
-            **result,
+            **result.model_dump(),
         },
         ok=True,
     )
@@ -769,6 +778,7 @@ def _handle_returns_refunds_detail_list(args: argparse.Namespace) -> int:
         offset=args.offset,
         limit=args.limit,
         max_pages=args.max_pages,
+        reverse_order_id=args.reverse_order_id,
     )
     return _emit(
         {
@@ -781,7 +791,7 @@ def _handle_returns_refunds_detail_list(args: argparse.Namespace) -> int:
                 "limit": args.limit,
                 "max_pages": args.max_pages,
             },
-            **result,
+            **result.model_dump(),
         },
         ok=True,
     )
@@ -795,6 +805,7 @@ def _handle_returns_refunds_history_list(args: argparse.Namespace) -> int:
         offset=args.offset,
         limit=args.limit,
         max_pages=args.max_pages,
+        reverse_order_line_id=args.reverse_order_line_id,
     )
     return _emit(
         {
@@ -806,20 +817,27 @@ def _handle_returns_refunds_history_list(args: argparse.Namespace) -> int:
                 "offset": args.offset,
                 "limit": args.limit,
                 "max_pages": args.max_pages,
+                "reverse_order_line_id":args.reverse_order_line_id,
             },
-            **result,
+            **result.model_dump(),
         },
         ok=True,
     )
 
 
-def _handle_returns_refunds_reason_list(_args: argparse.Namespace) -> int:
-    result = list_return_reasons(_with_client())
+def _handle_returns_refunds_reason_list(args: argparse.Namespace) -> int:
+    result = list_return_reasons(
+        _with_client(),
+        reverse_order_line_id=args.reverse_order_line_id,
+    )
     return _emit(
         {
             "domain": "returns-refunds",
             "action": "reason-list",
-            **result,
+            "filters": {
+                "reverse_order_line_id":args.reverse_order_line_id,
+            },
+            **result.model_dump(),
         },
         ok=True,
     )
@@ -845,7 +863,7 @@ def _handle_returns_refunds_get_reverse_orders_for_seller(args: argparse.Namespa
                 "limit": args.limit,
                 "max_pages": args.max_pages,
             },
-            **result,
+            **result.model_dump(),
         },
         ok=True,
     )
@@ -874,7 +892,7 @@ def _handle_reviews_seller_history_list(args: argparse.Namespace) -> int:
                 "limit": args.limit,
                 "max_pages": args.max_pages,
             },
-            **result,
+            **result.model_dump(),
         },
         ok=True,
     )
@@ -894,7 +912,7 @@ def _handle_reviews_seller_list_v2(args: argparse.Namespace) -> int:
                 "item_id": args.item_id,
                 "id_list": args.id_list,
             },
-            **result,
+            **result.model_dump(),
         },
         ok=True,
     )
@@ -914,7 +932,7 @@ def _handle_reviews_seller_reply_add(args: argparse.Namespace) -> int:
                 "id_list": args.id_list,
                 "content": args.content,
             },
-            **result,
+            **result.model_dump(),
         },
         ok=True,
     )
@@ -960,13 +978,14 @@ def _handle_reviews_get_item_reviews(args: argparse.Namespace) -> int:
     api_call_count = 0
     rate_limit_stopped = False
 
-    for order in orders_result.get("orders", []):
-        order_items = order.get("items", [])
+    orders_list = orders_result.orders
+    for order in orders_list:
+        order_items = order.get("items", []) if isinstance(order, dict) else (order.items or [])
         if not isinstance(order_items, list):
             continue
 
         for item in order_items:
-            item_id = item.get("item_id")
+            item_id = item.get("item_id") if isinstance(item, dict) else getattr(item, 'item_id', None)
             if not item_id or item_id in processed_item_ids:
                 continue
 
@@ -984,8 +1003,8 @@ def _handle_reviews_get_item_reviews(args: argparse.Namespace) -> int:
                     created_before=created_before,
                     item_id=str(item_id),
                 )
-                item_reviews = reviews_result.get("reviews", [])
-                item_request_ids = reviews_result.get("request_ids", [])
+                item_reviews = reviews_result.reviews
+                item_request_ids = reviews_result.request_ids
                 item_reviews = sorted(
                     [review for review in item_reviews if isinstance(review, dict)],
                     key=_review_timestamp_ms,
@@ -1107,7 +1126,7 @@ def _handle_reviews_get_recent_orders(args: argparse.Namespace) -> int:
                 continue
             raise
 
-    orders_list = orders_result.get("orders", [])[:max_orders]
+    orders_list = orders_result.orders[:max_orders]
 
     all_reviews = []
     processed_item_ids = set()
@@ -1117,13 +1136,13 @@ def _handle_reviews_get_recent_orders(args: argparse.Namespace) -> int:
     rate_limit_stopped = False
 
     for order in orders_list:
-        order_id = order.get("order_id")
-        order_items = order.get("items", [])
+        order_id = order.get("order_id") if isinstance(order, dict) else getattr(order, 'order_id', None)
+        order_items = order.get("items", []) if isinstance(order, dict) else (order.items or [])
         if not isinstance(order_items, list):
             continue
 
         for item in order_items:
-            item_id = item.get("item_id")
+            item_id = item.get("item_id") if isinstance(item, dict) else getattr(item, 'item_id', None)
             if not item_id or item_id in processed_item_ids:
                 continue
 
@@ -1141,8 +1160,8 @@ def _handle_reviews_get_recent_orders(args: argparse.Namespace) -> int:
                     created_before=created_before,
                     item_id=str(item_id),
                 )
-                item_reviews = reviews_result.get("reviews", [])
-                item_request_ids = reviews_result.get("request_ids", [])
+                item_reviews = reviews_result.reviews
+                item_request_ids = reviews_result.request_ids
                 item_reviews = sorted(
                     [review for review in item_reviews if isinstance(review, dict)],
                     key=_review_timestamp_ms,

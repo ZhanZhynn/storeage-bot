@@ -1,10 +1,10 @@
 import json
-from datetime import datetime
-from datetime import timedelta
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .client import LazadaClient
+from .models import (CancelValidationResponse, OrderItemsResponse,
+                     OrderResponse, OrdersResponse)
 
 
 def _format_dt(dt: datetime) -> str:
@@ -13,16 +13,18 @@ def _format_dt(dt: datetime) -> str:
 
 def build_default_order_window(days: int) -> tuple[str, str]:
     now = datetime.now(timezone.utc)
-    earlier = now - timedelta(days=days)
+    if days == 0:
+        earlier = now.replace(day=now.day-1,hour=16, second=0, minute=0, microsecond=0) #2026-04-25 16:00 (UTC) = 2026-04-26 0000 (GMT+8)
+    else:
+        earlier = now - timedelta(days=days)
     return _format_dt(earlier), _format_dt(now)
 
 
-def get_order_items(client: LazadaClient, **kwargs: Any) -> dict[str, Any]:
-    # Legacy helper used by reviews flow.
-    return fetch_orders(client, **kwargs)
+def get_order_items(client: LazadaClient, **kwargs: Any) -> OrdersResponse:
+    return fetch_orders(client, **kwargs)  # type: ignore[return-value]
 
 
-def get_order(client: LazadaClient, *, order_id: str) -> dict[str, Any]:
+def get_order(client: LazadaClient, *, order_id: str) -> OrderResponse:
     payload = client.get("/order/get", {"order_id": order_id})
     request_id = payload.get("request_id")
     data = payload.get("data")
@@ -31,14 +33,14 @@ def get_order(client: LazadaClient, *, order_id: str) -> dict[str, Any]:
     if isinstance(data, dict):
         order = data
 
-    return {
-        "endpoint": "/order/get",
-        "request_ids": [str(request_id)] if request_id else [],
-        "order": order,
-    }
+    return OrderResponse(
+        endpoint="/order/get",
+        request_ids=[str(request_id)] if request_id else [],
+        order=order,
+    )
 
 
-def get_order_items_by_order_id(client: LazadaClient, *, order_id: str) -> dict[str, Any]:
+def get_order_items_by_order_id(client: LazadaClient, *, order_id: str) -> OrderItemsResponse:
     payload = client.get("/order/items/get", {"order_id": order_id})
     request_id = payload.get("request_id")
     data = payload.get("data")
@@ -47,16 +49,20 @@ def get_order_items_by_order_id(client: LazadaClient, *, order_id: str) -> dict[
     if isinstance(data, list):
         items = [item for item in data if isinstance(item, dict)]
 
-    return {
-        "endpoint": "/order/items/get",
-        "request_ids": [str(request_id)] if request_id else [],
-        "order_id": str(order_id),
-        "total_fetched": len(items),
-        "order_items": items,
-    }
+    return OrderItemsResponse(
+        endpoint="/order/items/get",
+        request_ids=[str(request_id)] if request_id else [],
+        order_id=str(order_id),
+        total_fetched=len(items),
+        order_items=items,  # type: ignore[arg-type]
+    )
 
 
-def get_multiple_order_items(client: LazadaClient, *, order_ids: list[str] | list[int]) -> dict[str, Any]:
+def get_multiple_order_items(
+    client: LazadaClient,
+    *,
+    order_ids: list[str] | list[int],
+) -> OrderItemsResponse:
     if not order_ids:
         raise ValueError("order_ids must not be empty")
 
@@ -78,14 +84,13 @@ def get_multiple_order_items(client: LazadaClient, *, order_ids: list[str] | lis
         if isinstance(maybe_items, list):
             total_items += len([item for item in maybe_items if isinstance(item, dict)])
 
-    return {
-        "endpoint": "/orders/items/get",
-        "request_ids": [str(request_id)] if request_id else [],
-        "order_ids": normalized_order_ids,
-        "orders_count": len(orders),
-        "total_items": total_items,
-        "orders": orders,
-    }
+    return OrderItemsResponse(
+        endpoint="/orders/items/get",
+        request_ids=[str(request_id)] if request_id else [],
+        order_id=str(normalized_order_ids[0]) if normalized_order_ids else "",
+        total_fetched=total_items,
+        order_items=orders,  # type: ignore[arg-type]
+    )
 
 
 def validate_order_cancel(
@@ -93,7 +98,7 @@ def validate_order_cancel(
     *,
     order_id: str,
     order_item_id_list: list[str] | list[int] | None = None,
-) -> dict[str, Any]:
+) -> CancelValidationResponse:
     params: dict[str, Any] = {"order_id": order_id}
     normalized_item_ids: list[str] = []
     if order_item_id_list is not None:
@@ -112,13 +117,13 @@ def validate_order_cancel(
     if isinstance(data, dict):
         validation = data
 
-    return {
-        "endpoint": "/order/reverse/cancel/validate",
-        "request_ids": [str(request_id)] if request_id else [],
-        "order_id": str(order_id),
-        "order_item_id_list": normalized_item_ids,
-        "validation": validation,
-    }
+    return CancelValidationResponse(
+        endpoint="/order/reverse/cancel/validate",
+        request_ids=[str(request_id)] if request_id else [],
+        order_id=str(order_id),
+        order_item_id_list=normalized_item_ids,
+        validation=validation,
+    )
 
 
 def fetch_orders(
@@ -134,7 +139,7 @@ def fetch_orders(
     sort_by: str = "updated_at",
     sort_direction: str = "DESC",
     max_pages: int = 10,
-) -> dict[str, Any]:
+) -> OrdersResponse:
     if limit <= 0:
         raise ValueError("limit must be > 0")
     if offset < 0:
@@ -188,12 +193,12 @@ def fetch_orders(
 
         has_more = True
 
-    return {
-        "endpoint": "/orders/get",
-        "total_fetched": len(collected_orders),
-        "pages_fetched": len(request_ids),
-        "next_offset": current_offset if has_more else None,
-        "has_more": has_more,
-        "request_ids": request_ids,
-        "orders": collected_orders,
-    }
+    return OrdersResponse(
+        endpoint="/orders/get",
+        total_fetched=len(collected_orders),
+        pages_fetched=len(request_ids),
+        next_offset=current_offset if has_more else None,
+        has_more=has_more,
+        request_ids=request_ids,
+        orders=collected_orders,  # type: ignore[arg-type]
+    )

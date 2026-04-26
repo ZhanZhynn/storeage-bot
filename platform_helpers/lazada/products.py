@@ -1,6 +1,7 @@
 from typing import Any
 
 from .client import LazadaClient
+from .models import ProductItemResponse, ProductsResponse
 
 
 def _normalize_product(product: dict[str, Any]) -> dict[str, Any]:
@@ -43,7 +44,7 @@ def get_products(
     limit: int = 50,
     options: str = "1",
     max_pages: int | None = None,
-) -> dict[str, Any]:
+) -> ProductsResponse:
     if limit <= 0:
         raise ValueError("limit must be > 0")
     if offset < 0:
@@ -106,18 +107,18 @@ def get_products(
 
     normalized_products = [_normalize_product(p) for p in items]
 
-    return {
-        "endpoint": "/products/get",
-        "total_products": len(normalized_products),
-        "pages_fetched": len(request_ids),
-        "next_offset": current_offset if has_more else None,
-        "has_more": has_more,
-        "request_ids": request_ids,
-        "products": normalized_products,
-    }
+    return ProductsResponse(
+        endpoint="/products/get",
+        total_products=len(normalized_products),
+        pages_fetched=len(request_ids),
+        next_offset=current_offset if has_more else None,
+        has_more=has_more,
+        request_ids=request_ids,
+        products=normalized_products,  # type: ignore[arg-type]
+    )
 
 
-def get_product_item(client: LazadaClient, *, item_id: str) -> dict[str, Any]:
+def get_product_item(client: LazadaClient, *, item_id: str) -> ProductItemResponse:
     payload = client.get("/product/item/get", {"item_id": item_id})
     request_id = payload.get("request_id")
     data = payload.get("data") or {}
@@ -126,8 +127,8 @@ def get_product_item(client: LazadaClient, *, item_id: str) -> dict[str, Any]:
     if item is None:
         item = data
 
-    return {
-        "endpoint": "/product/item/get",
-        "request_ids": [str(request_id)] if request_id else [],
-        "item": item,
-    }
+    return ProductItemResponse(
+        endpoint="/product/item/get",
+        request_ids=[str(request_id)] if request_id else [],
+        item=item,  # type: ignore[arg-type]
+    )

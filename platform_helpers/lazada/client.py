@@ -2,10 +2,11 @@ import hashlib
 import hmac
 import os
 import time
-from dataclasses import dataclass
 from typing import Any
 
 import requests
+from pydantic import BaseModel, ConfigDict
+
 
 DEFAULT_TIMEOUT_SECONDS = 30
 DEFAULT_PARTNER_ID = "lazop-sdk-go-20230910"
@@ -31,14 +32,20 @@ class LazadaAPIError(Exception):
         self.request_id = request_id
 
 
-@dataclass
-class LazadaConfig:
-    app_key: str
-    app_secret: str
-    access_token: str
-    region: str
-    api_base: str
-    partner_id: str
+class LazadaConfig(BaseModel):
+    """Lazada API configuration from environment variables."""
+
+    app_key: str = ""
+    app_secret: str = ""
+    access_token: str = ""
+    region: str = "MY"
+    api_base: str = "https://api.lazada.com.my/rest"
+    partner_id: str = ""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        validate_default=True,
+    )
 
     @classmethod
     def from_env(cls) -> "LazadaConfig":
