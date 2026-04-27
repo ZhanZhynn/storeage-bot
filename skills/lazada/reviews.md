@@ -29,7 +29,7 @@ Retrieve seller review streams for quality monitoring, sentiment checks, and res
 - Seller review history list:
   - `python3 -m lazada_helper.cli reviews seller-history-list --created-after 2026-04-01 --created-before 2026-04-21 --item-id 14900763350 --current 1 --limit 100 --max-pages 10`
 - Seller review list v2:
-  - `python3 -m lazada_helper.cli reviews seller-list-v2 [--id-list 14900763350 ]`
+  - `python3 -m lazada_helper.cli reviews seller-list-v2 --id-list [14900763350]`
 - Reviews from items in delivered orders:
   - `python3 -m lazada_helper.cli reviews get-item-reviews --days 30 --sort desc --max-api-calls 10`
 - Reviews for recent N delivered orders:

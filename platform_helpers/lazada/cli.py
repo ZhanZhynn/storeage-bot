@@ -980,12 +980,11 @@ def _handle_reviews_get_item_reviews(args: argparse.Namespace) -> int:
 
     orders_list = orders_result.orders
     for order in orders_list:
-        order_items = order.get("items", []) if isinstance(order, dict) else (order.items or [])
-        if not isinstance(order_items, list):
-            continue
-
-        for item in order_items:
-            item_id = item.get("item_id") if isinstance(item, dict) else getattr(item, 'item_id', None)
+        #TODO: fix 
+        order_items_data = get_order_items_by_order_id(_with_client(), order_id=order.order_id)
+        for item in order_items_data.order_items:
+            item_id = item.product_id
+            print("item id", item_id)
             if not item_id or item_id in processed_item_ids:
                 continue
 
@@ -1003,6 +1002,7 @@ def _handle_reviews_get_item_reviews(args: argparse.Namespace) -> int:
                     created_before=created_before,
                     item_id=str(item_id),
                 )
+                print("reviews results", reviews_result)
                 item_reviews = reviews_result.reviews
                 item_request_ids = reviews_result.request_ids
                 item_reviews = sorted(
@@ -1057,8 +1057,8 @@ def _handle_reviews_get_item_reviews(args: argparse.Namespace) -> int:
                 )
             processed_item_ids.add(item_id)
 
-        if rate_limit_stopped:
-            break
+            if rate_limit_stopped:
+                break
 
     all_reviews = sorted(
         [review for review in all_reviews if isinstance(review, dict)],
