@@ -1,7 +1,18 @@
-"""Shopee platform helper (scaffold).
+"""Shopee platform helper."""
 
-This package will hold the Shopee API client, domain modules, and CLI
-following the same pattern as ``platform_helpers.lazada``.
-"""
+from .client import ShopeeClient, ShopeeConfig, ShopeeAPIError, ShopeeConfigError
+from .orders import fetch_orders, get_order_items, build_default_order_window
+from .products import get_products
+from .returns_refunds import get_return_list
 
-__all__: list[str] = []
+__all__ = [
+    "ShopeeClient",
+    "ShopeeConfig",
+    "ShopeeAPIError",
+    "ShopeeConfigError",
+    "fetch_orders",
+    "get_order_items",
+    "build_default_order_window",
+    "get_products",
+    "get_return_list",
+]
