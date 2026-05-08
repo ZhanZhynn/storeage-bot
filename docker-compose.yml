@@ -1,0 +1,19 @@
+services:
+  storeage-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: storeage-bot
+    restart: always
+    env_file:
+      - .env
+    environment:
+      BOLTY_SQLITE_DB_PATH: ${BOLTY_SQLITE_DB_PATH:-./data/bolty.db}
+      OPENCODE_SESSION_STORE: ${OPENCODE_SESSION_STORE:-./data/opencode_sessions.json}
+      AUTO_START_OPENCODE: ${AUTO_START_OPENCODE:-true}
+      OPENCODE_URL: ${OPENCODE_URL:-http://127.0.0.1:4096}
+      OPENCODE_HOSTNAME: ${OPENCODE_HOSTNAME:-127.0.0.1}
+      OPENCODE_PORT: ${OPENCODE_PORT:-4096}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
