@@ -1,9 +1,16 @@
 """Shopee platform helper."""
 
-from .client import ShopeeClient, ShopeeConfig, ShopeeAPIError, ShopeeConfigError
-from .orders import fetch_orders, get_order_items, build_default_order_window
-from .products import get_products
-from .returns_refunds import get_return_list
+from .client import (ShopeeAPIError, ShopeeClient, ShopeeConfig,
+                     ShopeeConfigError)
+from .orders import build_default_order_window, fetch_orders, get_order_items
+from .products import (add_model, add_product, delete_model, delete_product,
+                       get_comments, get_item_limit, get_model_list, get_product,
+                       get_product_extra_info, get_product_price,
+                       get_product_promotion, get_product_stock, get_products,
+                       init_tier_variation, reply_comments, search_products,
+                       unlist_product, update_model, update_product,
+                       update_product_price, update_product_stock,
+                       update_tier_variation)
 
 __all__ = [
     "ShopeeClient",
@@ -14,5 +21,26 @@ __all__ = [
     "get_order_items",
     "build_default_order_window",
     "get_products",
+    "search_products",
+    "get_product",
+    "get_model_list",
+    "get_product_extra_info",
+    "get_product_promotion",
+    "update_product",
+    "add_product",
+    "unlist_product",
+    "delete_product",
+    "init_tier_variation",
+    "update_tier_variation",
+    "add_model",
+    "update_model",
+    "delete_model",
+    "get_item_limit",
+    "get_product_price",
+    "get_product_stock",
+    "update_product_price",
+    "update_product_stock",
+    "get_comments",
+    "reply_comments",
     "get_return_list",
 ]

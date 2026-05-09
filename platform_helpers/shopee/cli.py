@@ -3,10 +3,17 @@ import json
 import sys
 from typing import Any
 
-from .client import ShopeeAPIError, ShopeeClient, ShopeeConfig, ShopeeConfigError
+from .client import (ShopeeAPIError, ShopeeClient, ShopeeConfig,
+                     ShopeeConfigError)
 from .orders import build_default_order_window, fetch_orders, get_order_items
-from .products import get_products
-from .returns_refunds import get_return_list
+from .products import (add_model, add_product, delete_model, delete_product,
+                       get_comments, get_item_limit, get_model_list, get_product,
+                       get_product_extra_info, get_product_price,
+                       get_product_promotion, get_product_stock, get_products,
+                       init_tier_variation, reply_comments, search_products,
+                       unlist_product, update_model, update_product,
+                       update_product_price, update_product_stock,
+                       update_tier_variation)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -43,25 +50,163 @@ def _build_parser() -> argparse.ArgumentParser:
     products_get = products_subparsers.add_parser("get", help="Fetch items via /api/v2/product/get_item_list")
     products_get.add_argument("--page-size", dest="page_size", type=int, default=50)
     products_get.add_argument("--offset", type=int, default=0)
-    products_get.add_argument("--item-status", dest="item_status", default=None)
+    products_get.add_argument(
+        "--item-status",
+        dest="item_status",
+        default=None,
+        help="Comma-separated list of item statuses (e.g. NORMAL,UNLIST)",
+    )
     products_get.add_argument("--update-time-from", dest="update_time_from", type=int, default=None)
     products_get.add_argument("--update-time-to", dest="update_time_to", type=int, default=None)
     products_get.add_argument("--max-pages", dest="max_pages", type=int, default=10)
 
-    returns_refunds = subparsers.add_parser(
-        "returns-refunds", help="Returns/refunds domain operations"
+    products_search = products_subparsers.add_parser("search", help="Search items via /api/v2/product/search_item")
+    products_search.add_argument("--page-size", dest="page_size", type=int, default=50)
+    products_search.add_argument("--offset", default=None)
+    products_search.add_argument("--item-name", dest="item_name", default=None)
+    products_search.add_argument("--item-sku", dest="item_sku", default=None)
+    products_search.add_argument("--attribute-status", dest="attribute_status", type=int, default=None)
+    products_search.add_argument(
+        "--item-status",
+        dest="item_status",
+        default=None,
+        help="Comma-separated list of item statuses (e.g. NORMAL,UNLIST)",
     )
-    rr_subparsers = returns_refunds.add_subparsers(dest="action", required=True)
+    products_search.add_argument("--deboost-only", dest="deboost_only", default=None)
+    products_search.add_argument("--max-pages", dest="max_pages", type=int, default=10)
 
-    rr_list = rr_subparsers.add_parser("list", help="Fetch returns via /api/v2/returns/get_return_list")
-    rr_list.add_argument("--page-size", dest="page_size", type=int, default=50)
-    rr_list.add_argument("--cursor", default=None)
-    rr_list.add_argument("--create-time-from", dest="create_time_from", type=int, default=None)
-    rr_list.add_argument("--create-time-to", dest="create_time_to", type=int, default=None)
-    rr_list.add_argument("--update-time-from", dest="update_time_from", type=int, default=None)
-    rr_list.add_argument("--update-time-to", dest="update_time_to", type=int, default=None)
-    rr_list.add_argument("--status", default=None)
-    rr_list.add_argument("--max-pages", dest="max_pages", type=int, default=10)
+    products_get_one = products_subparsers.add_parser(
+        "get-one", help="Fetch product base info via /api/v2/product/get_item_base_info"
+    )
+    products_get_one.add_argument("--item-id", dest="item_id", type=int, required=True)
+
+    products_models = products_subparsers.add_parser(
+        "models", help="Fetch product models via /api/v2/product/get_model_list"
+    )
+    products_models.add_argument("--item-id", dest="item_id", type=int, required=True)
+
+    products_extra = products_subparsers.add_parser(
+        "extra", help="Fetch product extra info via /api/v2/product/get_item_extra_info"
+    )
+    products_extra.add_argument("--item-id", dest="item_id", type=int, required=True)
+
+    products_promotion = products_subparsers.add_parser(
+        "promotion", help="Fetch product promotion info via /api/v2/product/get_item_promotion"
+    )
+    products_promotion.add_argument("--item-id", dest="item_id", type=int, required=True)
+
+    products_update = products_subparsers.add_parser(
+        "update", help="Update product info via /api/v2/product/update_item"
+    )
+    products_update.add_argument("--item-id", dest="item_id", type=int, required=True)
+    products_update.add_argument(
+        "--payload",
+        dest="payload",
+        required=True,
+        help="JSON string payload containing fields to update",
+    )
+
+    products_add = products_subparsers.add_parser(
+        "add", help="Create new product via /api/v2/product/add_item"
+    )
+    products_add.add_argument(
+        "--payload",
+        dest="payload",
+        required=True,
+        help="JSON string payload for add_item",
+    )
+
+    products_unlist = products_subparsers.add_parser(
+        "unlist", help="Unlist product via /api/v2/product/unlist_item"
+    )
+    products_unlist.add_argument("--item-id", dest="item_id", type=int, required=True)
+    products_unlist.add_argument("--unlist", dest="unlist", action="store_true")
+    products_unlist.add_argument("--relist", dest="unlist", action="store_false")
+    products_unlist.set_defaults(unlist=True)
+
+    products_delete = products_subparsers.add_parser(
+        "delete", help="Delete product via /api/v2/product/delete_item"
+    )
+    products_delete.add_argument("--item-id", dest="item_id", type=int, required=True)
+
+    products_tier_init = products_subparsers.add_parser(
+        "tier-init", help="Init tier variation via /api/v2/product/init_tier_variation"
+    )
+    products_tier_init.add_argument("--item-id", dest="item_id", type=int, required=True)
+    products_tier_init.add_argument("--tier-variation", dest="tier_variation", required=True)
+    products_tier_init.add_argument("--model-list", dest="model_list", required=True)
+
+    products_tier_update = products_subparsers.add_parser(
+        "tier-update", help="Update tier variation via /api/v2/product/update_tier_variation"
+    )
+    products_tier_update.add_argument("--item-id", dest="item_id", type=int, required=True)
+    products_tier_update.add_argument("--tier-variation", dest="tier_variation", required=True)
+    products_tier_update.add_argument("--model-list", dest="model_list", default=None)
+
+    products_model_add = products_subparsers.add_parser(
+        "model-add", help="Add model via /api/v2/product/add_model"
+    )
+    products_model_add.add_argument("--item-id", dest="item_id", type=int, required=True)
+    products_model_add.add_argument("--model-list", dest="model_list", required=True)
+
+    products_model_update = products_subparsers.add_parser(
+        "model-update", help="Update model via /api/v2/product/update_model"
+    )
+    products_model_update.add_argument("--item-id", dest="item_id", type=int, required=True)
+    products_model_update.add_argument("--model-list", dest="model_list", required=True)
+
+    products_model_delete = products_subparsers.add_parser(
+        "model-delete", help="Delete model via /api/v2/product/delete_model"
+    )
+    products_model_delete.add_argument("--item-id", dest="item_id", type=int, required=True)
+    products_model_delete.add_argument("--model-id-list", dest="model_id_list", required=True)
+
+    products_price_get = products_subparsers.add_parser(
+        "price-get", help="Get product price via get_item_base_info/get_model_list"
+    )
+    products_price_get.add_argument("--item-id", dest="item_id", type=int, required=True)
+    products_price_get.add_argument("--has-model", dest="has_model", action="store_true")
+    products_price_get.add_argument("--no-model", dest="has_model", action="store_false")
+    products_price_get.set_defaults(has_model=False)
+
+    products_stock_get = products_subparsers.add_parser(
+        "stock-get", help="Get product stock via get_item_base_info/get_model_list"
+    )
+    products_stock_get.add_argument("--item-id", dest="item_id", type=int, required=True)
+    products_stock_get.add_argument("--has-model", dest="has_model", action="store_true")
+    products_stock_get.add_argument("--no-model", dest="has_model", action="store_false")
+    products_stock_get.set_defaults(has_model=False)
+
+    products_price_update = products_subparsers.add_parser(
+        "price-update", help="Update product price via /api/v2/product/update_price"
+    )
+    products_price_update.add_argument("--item-id", dest="item_id", type=int, required=True)
+    products_price_update.add_argument("--price-list", dest="price_list", required=True)
+
+    products_stock_update = products_subparsers.add_parser(
+        "stock-update", help="Update product stock via /api/v2/product/update_stock"
+    )
+    products_stock_update.add_argument("--item-id", dest="item_id", type=int, required=True)
+    products_stock_update.add_argument("--stock-list", dest="stock_list", required=True)
+
+    products_limit = products_subparsers.add_parser(
+        "limit", help="Get item limits via /api/v2/product/get_item_limit"
+    )
+    products_limit.add_argument("--item-id", dest="item_id", type=int, required=True)
+
+    products_comments = products_subparsers.add_parser(
+        "comments", help="Get comments via /api/v2/product/get_comment"
+    )
+    products_comments.add_argument("--page-size", dest="page_size", type=int, default=50)
+    products_comments.add_argument("--cursor", default="")
+    products_comments.add_argument("--item-id", dest="item_id", type=int, default=None)
+    products_comments.add_argument("--comment-id", dest="comment_id", type=int, default=None)
+    products_comments.add_argument("--max-pages", dest="max_pages", type=int, default=10)
+
+    products_reply = products_subparsers.add_parser(
+        "reply", help="Reply comments via /api/v2/product/reply_comment"
+    )
+    products_reply.add_argument("--comment-list", dest="comment_list", required=True)
 
     auth = subparsers.add_parser("auth", help="Authorization helpers")
     auth_subparsers = auth.add_subparsers(dest="action", required=True)
@@ -148,11 +293,14 @@ def _handle_orders_items(args: argparse.Namespace) -> int:
 
 
 def _handle_products_get(args: argparse.Namespace) -> int:
+    item_status = None
+    if args.item_status:
+        item_status = [status.strip() for status in args.item_status.split(",") if status.strip()]
     result = get_products(
         _with_client(),
         page_size=args.page_size,
         offset=args.offset,
-        item_status=args.item_status,
+        item_status=item_status,
         update_time_from=args.update_time_from,
         update_time_to=args.update_time_to,
         max_pages=args.max_pages,
@@ -164,12 +312,356 @@ def _handle_products_get(args: argparse.Namespace) -> int:
             "filters": {
                 "page_size": args.page_size,
                 "offset": args.offset,
-                "item_status": args.item_status,
+                "item_status": item_status,
                 "update_time_from": args.update_time_from,
                 "update_time_to": args.update_time_to,
                 "max_pages": args.max_pages,
             },
             **result.model_dump(),
+        },
+        ok=True,
+    )
+
+
+def _handle_products_search(args: argparse.Namespace) -> int:
+    def _to_bool(value: Any) -> bool | None:
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return value
+        normalized = str(value).strip().lower()
+        if normalized in ("true", "1", "yes", "y"):
+            return True
+        if normalized in ("false", "0", "no", "n"):
+            return False
+        return None
+
+    item_status = None
+    if args.item_status:
+        item_status = [status.strip() for status in args.item_status.split(",") if status.strip()]
+
+    result = search_products(
+        _with_client(),
+        page_size=args.page_size,
+        offset=args.offset,
+        item_name=args.item_name,
+        item_sku=args.item_sku,
+        attribute_status=args.attribute_status,
+        item_status=item_status,
+        deboost_only=_to_bool(args.deboost_only),
+        max_pages=args.max_pages,
+    )
+    return _emit(
+        {
+            "domain": "products",
+            "action": "search",
+            "filters": {
+                "page_size": args.page_size,
+                "offset": args.offset,
+                "item_name": args.item_name,
+                "item_sku": args.item_sku,
+                "attribute_status": args.attribute_status,
+                "item_status": item_status,
+                "deboost_only": args.deboost_only,
+                "max_pages": args.max_pages,
+            },
+            **result.model_dump(),
+        },
+        ok=True,
+    )
+
+
+def _handle_products_get_one(args: argparse.Namespace) -> int:
+    result = get_product(_with_client(), item_id=args.item_id)
+    return _emit(
+        {
+            "domain": "products",
+            "action": "get-one",
+            "item_id": args.item_id,
+            **result.model_dump(),
+        },
+        ok=True,
+    )
+
+
+def _handle_products_models(args: argparse.Namespace) -> int:
+    result = get_model_list(_with_client(), item_id=args.item_id)
+    return _emit(
+        {
+            "domain": "products",
+            "action": "models",
+            "item_id": args.item_id,
+            **result.model_dump(),
+        },
+        ok=True,
+    )
+
+
+def _handle_products_extra(args: argparse.Namespace) -> int:
+    result = get_product_extra_info(_with_client(), item_id=args.item_id)
+    return _emit(
+        {
+            "domain": "products",
+            "action": "extra",
+            "item_id": args.item_id,
+            **result.model_dump(),
+        },
+        ok=True,
+    )
+
+
+def _handle_products_promotion(args: argparse.Namespace) -> int:
+    result = get_product_promotion(_with_client(), item_id=args.item_id)
+    return _emit(
+        {
+            "domain": "products",
+            "action": "promotion",
+            "item_id": args.item_id,
+            **result.model_dump(),
+        },
+        ok=True,
+    )
+
+
+def _handle_products_update(args: argparse.Namespace) -> int:
+    update_payload = json.loads(args.payload)
+    result = update_product(_with_client(), item_id=args.item_id, update_payload=update_payload)
+    return _emit(
+        {
+            "domain": "products",
+            "action": "update",
+            "item_id": args.item_id,
+            "response": result,
+        },
+        ok=True,
+    )
+
+
+def _handle_products_add(args: argparse.Namespace) -> int:
+    payload = json.loads(args.payload)
+    result = add_product(_with_client(), payload=payload)
+    return _emit(
+        {
+            "domain": "products",
+            "action": "add",
+            **result.model_dump(),
+        },
+        ok=True,
+    )
+
+
+def _handle_products_unlist(args: argparse.Namespace) -> int:
+    result = unlist_product(_with_client(), item_id=args.item_id, unlist=args.unlist)
+    return _emit(
+        {
+            "domain": "products",
+            "action": "unlist",
+            "item_id": args.item_id,
+            "unlist": args.unlist,
+            "response": result,
+        },
+        ok=True,
+    )
+
+
+def _handle_products_delete(args: argparse.Namespace) -> int:
+    result = delete_product(_with_client(), item_id=args.item_id)
+    return _emit(
+        {
+            "domain": "products",
+            "action": "delete",
+            "item_id": args.item_id,
+            "response": result,
+        },
+        ok=True,
+    )
+
+
+def _handle_products_tier_init(args: argparse.Namespace) -> int:
+    tier_variation = json.loads(args.tier_variation)
+    model_list = json.loads(args.model_list)
+    result = init_tier_variation(
+        _with_client(),
+        item_id=args.item_id,
+        tier_variation=tier_variation,
+        model_list=model_list,
+    )
+    return _emit(
+        {
+            "domain": "products",
+            "action": "tier-init",
+            "item_id": args.item_id,
+            "response": result,
+        },
+        ok=True,
+    )
+
+
+def _handle_products_tier_update(args: argparse.Namespace) -> int:
+    tier_variation = json.loads(args.tier_variation)
+    model_list = json.loads(args.model_list) if args.model_list is not None else None
+    result = update_tier_variation(
+        _with_client(),
+        item_id=args.item_id,
+        tier_variation=tier_variation,
+        model_list=model_list,
+    )
+    return _emit(
+        {
+            "domain": "products",
+            "action": "tier-update",
+            "item_id": args.item_id,
+            "response": result,
+        },
+        ok=True,
+    )
+
+
+def _handle_products_model_add(args: argparse.Namespace) -> int:
+    model_list = json.loads(args.model_list)
+    result = add_model(_with_client(), item_id=args.item_id, model_list=model_list)
+    return _emit(
+        {
+            "domain": "products",
+            "action": "model-add",
+            "item_id": args.item_id,
+            "response": result,
+        },
+        ok=True,
+    )
+
+
+def _handle_products_model_update(args: argparse.Namespace) -> int:
+    model_list = json.loads(args.model_list)
+    result = update_model(_with_client(), item_id=args.item_id, model_list=model_list)
+    return _emit(
+        {
+            "domain": "products",
+            "action": "model-update",
+            "item_id": args.item_id,
+            "response": result,
+        },
+        ok=True,
+    )
+
+
+def _handle_products_model_delete(args: argparse.Namespace) -> int:
+    model_id_list = json.loads(args.model_id_list)
+    result = delete_model(_with_client(), item_id=args.item_id, model_id_list=model_id_list)
+    return _emit(
+        {
+            "domain": "products",
+            "action": "model-delete",
+            "item_id": args.item_id,
+            "response": result,
+        },
+        ok=True,
+    )
+
+
+def _handle_products_price_get(args: argparse.Namespace) -> int:
+    result = get_product_price(_with_client(), item_id=args.item_id, has_model=args.has_model)
+    return _emit(
+        {
+            "domain": "products",
+            "action": "price-get",
+            "item_id": args.item_id,
+            "has_model": args.has_model,
+            "response": result,
+        },
+        ok=True,
+    )
+
+
+def _handle_products_stock_get(args: argparse.Namespace) -> int:
+    result = get_product_stock(_with_client(), item_id=args.item_id, has_model=args.has_model)
+    return _emit(
+        {
+            "domain": "products",
+            "action": "stock-get",
+            "item_id": args.item_id,
+            "has_model": args.has_model,
+            "response": result,
+        },
+        ok=True,
+    )
+
+
+def _handle_products_price_update(args: argparse.Namespace) -> int:
+    price_list = json.loads(args.price_list)
+    result = update_product_price(_with_client(), item_id=args.item_id, price_list=price_list)
+    return _emit(
+        {
+            "domain": "products",
+            "action": "price-update",
+            "item_id": args.item_id,
+            "response": result,
+        },
+        ok=True,
+    )
+
+
+def _handle_products_stock_update(args: argparse.Namespace) -> int:
+    stock_list = json.loads(args.stock_list)
+    result = update_product_stock(_with_client(), item_id=args.item_id, stock_list=stock_list)
+    return _emit(
+        {
+            "domain": "products",
+            "action": "stock-update",
+            "item_id": args.item_id,
+            "response": result,
+        },
+        ok=True,
+    )
+
+
+def _handle_products_limit(args: argparse.Namespace) -> int:
+    result = get_item_limit(_with_client(), item_id=args.item_id)
+    return _emit(
+        {
+            "domain": "products",
+            "action": "limit",
+            "item_id": args.item_id,
+            "response": result,
+        },
+        ok=True,
+    )
+
+
+def _handle_products_comments(args: argparse.Namespace) -> int:
+    result = get_comments(
+        _with_client(),
+        page_size=args.page_size,
+        cursor=args.cursor,
+        item_id=args.item_id,
+        comment_id=args.comment_id,
+        max_pages=args.max_pages,
+    )
+    return _emit(
+        {
+            "domain": "products",
+            "action": "comments",
+            "filters": {
+                "page_size": args.page_size,
+                "cursor": args.cursor,
+                "item_id": args.item_id,
+                "comment_id": args.comment_id,
+                "max_pages": args.max_pages,
+            },
+            **result.model_dump(),
+        },
+        ok=True,
+    )
+
+
+def _handle_products_reply(args: argparse.Namespace) -> int:
+    comment_list = json.loads(args.comment_list)
+    result = reply_comments(_with_client(), comment_list=comment_list)
+    return _emit(
+        {
+            "domain": "products",
+            "action": "reply",
+            "response": result.model_dump(),
         },
         ok=True,
     )
@@ -241,6 +733,48 @@ def main(argv: list[str] | None = None) -> int:
             return _handle_orders_items(args)
         if args.domain == "products" and args.action == "get":
             return _handle_products_get(args)
+        if args.domain == "products" and args.action == "search":
+            return _handle_products_search(args)
+        if args.domain == "products" and args.action == "get-one":
+            return _handle_products_get_one(args)
+        if args.domain == "products" and args.action == "models":
+            return _handle_products_models(args)
+        if args.domain == "products" and args.action == "extra":
+            return _handle_products_extra(args)
+        if args.domain == "products" and args.action == "promotion":
+            return _handle_products_promotion(args)
+        if args.domain == "products" and args.action == "update":
+            return _handle_products_update(args)
+        if args.domain == "products" and args.action == "add":
+            return _handle_products_add(args)
+        if args.domain == "products" and args.action == "unlist":
+            return _handle_products_unlist(args)
+        if args.domain == "products" and args.action == "delete":
+            return _handle_products_delete(args)
+        if args.domain == "products" and args.action == "tier-init":
+            return _handle_products_tier_init(args)
+        if args.domain == "products" and args.action == "tier-update":
+            return _handle_products_tier_update(args)
+        if args.domain == "products" and args.action == "model-add":
+            return _handle_products_model_add(args)
+        if args.domain == "products" and args.action == "model-update":
+            return _handle_products_model_update(args)
+        if args.domain == "products" and args.action == "model-delete":
+            return _handle_products_model_delete(args)
+        if args.domain == "products" and args.action == "price-get":
+            return _handle_products_price_get(args)
+        if args.domain == "products" and args.action == "stock-get":
+            return _handle_products_stock_get(args)
+        if args.domain == "products" and args.action == "price-update":
+            return _handle_products_price_update(args)
+        if args.domain == "products" and args.action == "stock-update":
+            return _handle_products_stock_update(args)
+        if args.domain == "products" and args.action == "limit":
+            return _handle_products_limit(args)
+        if args.domain == "products" and args.action == "comments":
+            return _handle_products_comments(args)
+        if args.domain == "products" and args.action == "reply":
+            return _handle_products_reply(args)
         if args.domain == "returns-refunds" and args.action == "list":
             return _handle_returns_list(args)
         if args.domain == "auth" and args.action == "url":
