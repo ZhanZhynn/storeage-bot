@@ -5,7 +5,10 @@ from typing import Any
 
 from .client import (ShopeeAPIError, ShopeeClient, ShopeeConfig,
                      ShopeeConfigError)
-from .orders import build_default_order_window, fetch_orders, get_order_items
+from .orders import (build_default_order_window, cancel_order, fetch_orders,
+                     get_order_items, get_package_detail,
+                     handle_buyer_cancellation, search_package_list, split_order,
+                     split_order_max, unsplit_order)
 from .products import (add_model, add_product, delete_model, delete_product,
                        get_comments, get_item_limit, get_model_list, get_product,
                        get_product_extra_info, get_product_price,
@@ -43,6 +46,54 @@ def _build_parser() -> argparse.ArgumentParser:
         "items", help="Fetch order items via /api/v2/order/get_order_detail"
     )
     orders_items.add_argument("--order-sn-list", dest="order_sn_list", required=True)
+
+    orders_cancel = orders_subparsers.add_parser(
+        "cancel", help="Cancel order via /api/v2/order/cancel_order"
+    )
+    orders_cancel.add_argument("--order-sn", dest="order_sn", required=True)
+    orders_cancel.add_argument("--cancel-reason", dest="cancel_reason", required=True)
+    orders_cancel.add_argument("--item-list", dest="item_list", default=None)
+
+    orders_buyer_cancel = orders_subparsers.add_parser(
+        "buyer-cancel", help="Handle buyer cancellation via /api/v2/order/handle_buyer_cancellation"
+    )
+    orders_buyer_cancel.add_argument("--order-sn", dest="order_sn", required=True)
+    orders_buyer_cancel.add_argument("--operation", dest="operation", required=True)
+
+    orders_split = orders_subparsers.add_parser(
+        "split", help="Split order via /api/v2/order/split_order"
+    )
+    orders_split.add_argument("--order-sn", dest="order_sn", required=True)
+    orders_split.add_argument("--package-list", dest="package_list", required=True)
+
+    orders_unsplit = orders_subparsers.add_parser(
+        "unsplit", help="Undo split via /api/v2/order/unsplit_order"
+    )
+    orders_unsplit.add_argument("--order-sn", dest="order_sn", required=True)
+
+    orders_split_max = orders_subparsers.add_parser(
+        "split-max", help="Split order into max N packages evenly via /api/v2/order/split_order"
+    )
+    orders_split_max.add_argument("--order-sn", dest="order_sn", required=True)
+    orders_split_max.add_argument("--max-packages", dest="max_packages", type=int, default=2)
+    orders_split_max.add_argument(
+        "--package-number", dest="package_number", required=True,
+        help="Existing package number for the order (to fetch item_list)"
+    )
+
+    orders_pkg_search = orders_subparsers.add_parser(
+        "pkg-search", help="Search packages via /api/v2/order/search_package_list"
+    )
+    orders_pkg_search.add_argument("--page-size", dest="page_size", type=int, default=50)
+    orders_pkg_search.add_argument("--cursor", dest="cursor", default=None)
+    orders_pkg_search.add_argument("--filter", dest="filter_payload", default=None)
+    orders_pkg_search.add_argument("--sort", dest="sort_payload", default=None)
+    orders_pkg_search.add_argument("--max-pages", dest="max_pages", type=int, default=10)
+
+    orders_pkg_detail = orders_subparsers.add_parser(
+        "pkg-detail", help="Get package detail via /api/v2/order/get_package_detail"
+    )
+    orders_pkg_detail.add_argument("--package-number-list", dest="package_number_list", required=True)
 
     products = subparsers.add_parser("products", help="Product domain operations")
     products_subparsers = products.add_subparsers(dest="action", required=True)
@@ -286,6 +337,158 @@ def _handle_orders_items(args: argparse.Namespace) -> int:
             "domain": "orders",
             "action": "items",
             "order_sn_list": order_sn_list,
+            **result.model_dump(),
+        },
+        ok=True,
+    )
+
+
+def _handle_orders_cancel(args: argparse.Namespace) -> int:
+    item_list = json.loads(args.item_list) if args.item_list else None
+    result = cancel_order(
+        _with_client(),
+        order_sn=args.order_sn,
+        cancel_reason=args.cancel_reason,
+        item_list=item_list,
+    )
+    return _emit(
+        {
+            "domain": "orders",
+            "action": "cancel",
+            "order_sn": args.order_sn,
+            "response": result.model_dump(),
+        },
+        ok=True,
+    )
+
+
+def _handle_orders_buyer_cancel(args: argparse.Namespace) -> int:
+    result = handle_buyer_cancellation(
+        _with_client(),
+        order_sn=args.order_sn,
+        operation=args.operation,
+    )
+    return _emit(
+        {
+            "domain": "orders",
+            "action": "buyer-cancel",
+            "order_sn": args.order_sn,
+            "response": result.model_dump(),
+        },
+        ok=True,
+    )
+
+
+def _handle_orders_split(args: argparse.Namespace) -> int:
+    package_list = json.loads(args.package_list)
+    result = split_order(
+        _with_client(),
+        order_sn=args.order_sn,
+        package_list=package_list,
+    )
+    return _emit(
+        {
+            "domain": "orders",
+            "action": "split",
+            "order_sn": args.order_sn,
+            **result.model_dump(),
+        },
+        ok=True,
+    )
+
+
+def _handle_orders_unsplit(args: argparse.Namespace) -> int:
+    result = unsplit_order(_with_client(), order_sn=args.order_sn)
+    return _emit(
+        {
+            "domain": "orders",
+            "action": "unsplit",
+            "order_sn": args.order_sn,
+            "response": result.model_dump(),
+        },
+        ok=True,
+    )
+
+
+def _handle_orders_split_max(args: argparse.Namespace) -> int:
+    detail = get_package_detail(_with_client(), package_number_list=[args.package_number])
+    packages = detail.packages
+    if not packages:
+        return _emit(
+            {"error": f"Package {args.package_number} not found"}, ok=False, status="not_found"
+        )
+    order_sn = packages[0].get("order_sn") or args.order_sn
+    item_list = [i for i in packages[0].get("item_list", []) if isinstance(i, dict)]
+    if not item_list:
+        return _emit(
+            {"error": f"No items found in package {args.package_number}"}, ok=False, status="no_items"
+        )
+    total_items = len(item_list)
+    items_per_pkg = total_items // args.max_packages
+    remainder = total_items % args.max_packages
+
+    package_list: list[dict[str, Any]] = []
+    idx = 0
+    for pkg_idx in range(args.max_packages):
+        count = items_per_pkg + (1 if pkg_idx < remainder else 0)
+        package_items = item_list[idx : idx + count]
+        idx += count
+        package_list.append({"item_list": package_items})
+        if idx >= total_items:
+            break
+
+    result = split_order(_with_client(), order_sn=order_sn, package_list=package_list)
+    return _emit(
+        {
+            "domain": "orders",
+            "action": "split-max",
+            "order_sn": order_sn,
+            "max_packages": args.max_packages,
+            "package_list": package_list,
+            **result.model_dump(),
+        },
+        ok=True,
+    )
+
+
+def _handle_orders_pkg_search(args: argparse.Namespace) -> int:
+    filter_payload = json.loads(args.filter_payload) if args.filter_payload else None
+    sort_payload = json.loads(args.sort_payload) if args.sort_payload else None
+    result = search_package_list(
+        _with_client(),
+        page_size=args.page_size,
+        cursor=args.cursor,
+        filter_payload=filter_payload,
+        sort_payload=sort_payload,
+        max_pages=args.max_pages,
+    )
+    return _emit(
+        {
+            "domain": "orders",
+            "action": "pkg-search",
+            "filters": {
+                "page_size": args.page_size,
+                "cursor": args.cursor,
+                "filter": filter_payload,
+                "sort": sort_payload,
+                "max_pages": args.max_pages,
+            },
+            **result.model_dump(),
+        },
+        ok=True,
+    )
+
+
+def _handle_orders_pkg_detail(args: argparse.Namespace) -> int:
+    package_number_list = [
+        value.strip() for value in args.package_number_list.split(",") if value.strip()
+    ]
+    result = get_package_detail(_with_client(), package_number_list=package_number_list)
+    return _emit(
+        {
+            "domain": "orders",
+            "action": "pkg-detail",
+            "package_number_list": package_number_list,
             **result.model_dump(),
         },
         ok=True,
@@ -731,6 +934,20 @@ def main(argv: list[str] | None = None) -> int:
             return _handle_orders_get(args)
         if args.domain == "orders" and args.action == "items":
             return _handle_orders_items(args)
+        if args.domain == "orders" and args.action == "cancel":
+            return _handle_orders_cancel(args)
+        if args.domain == "orders" and args.action == "buyer-cancel":
+            return _handle_orders_buyer_cancel(args)
+        if args.domain == "orders" and args.action == "split":
+            return _handle_orders_split(args)
+        if args.domain == "orders" and args.action == "unsplit":
+            return _handle_orders_unsplit(args)
+        if args.domain == "orders" and args.action == "split-max":
+            return _handle_orders_split_max(args)
+        if args.domain == "orders" and args.action == "pkg-search":
+            return _handle_orders_pkg_search(args)
+        if args.domain == "orders" and args.action == "pkg-detail":
+            return _handle_orders_pkg_detail(args)
         if args.domain == "products" and args.action == "get":
             return _handle_products_get(args)
         if args.domain == "products" and args.action == "search":

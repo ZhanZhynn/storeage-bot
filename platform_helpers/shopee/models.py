@@ -26,6 +26,28 @@ class OrderItemsResponse(ShopeeBaseResponse):
     items: list[dict[str, Any]]
 
 
+class OrderActionResponse(ShopeeBaseResponse):
+    response: dict[str, Any]
+
+
+class OrderSplitResponse(ShopeeBaseResponse):
+    order_sn: str | None
+    package_list: list[dict[str, Any]]
+
+
+class PackageListResponse(ShopeeBaseResponse):
+    total_fetched: int
+    pages_fetched: int
+    has_more: bool
+    next_cursor: str | None
+    total_count: int | None
+    packages: list[dict[str, Any]]
+
+
+class PackageDetailResponse(ShopeeBaseResponse):
+    packages: list[dict[str, Any]]
+
+
 class ProductsResponse(ShopeeBaseResponse):
     total_fetched: int
     pages_fetched: int

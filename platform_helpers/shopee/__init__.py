@@ -2,7 +2,10 @@
 
 from .client import (ShopeeAPIError, ShopeeClient, ShopeeConfig,
                      ShopeeConfigError)
-from .orders import build_default_order_window, fetch_orders, get_order_items
+from .orders import (build_default_order_window, cancel_order, fetch_orders,
+                     get_order_items, get_package_detail,
+                     handle_buyer_cancellation, search_package_list, split_order,
+                     split_order_max, unsplit_order)
 from .products import (add_model, add_product, delete_model, delete_product,
                        get_comments, get_item_limit, get_model_list, get_product,
                        get_product_extra_info, get_product_price,
@@ -19,6 +22,13 @@ __all__ = [
     "ShopeeConfigError",
     "fetch_orders",
     "get_order_items",
+    "cancel_order",
+    "handle_buyer_cancellation",
+    "split_order",
+    "unsplit_order",
+    "search_package_list",
+    "get_package_detail",
+    "split_order_max",
     "build_default_order_window",
     "get_products",
     "search_products",
